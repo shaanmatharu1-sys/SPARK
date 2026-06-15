@@ -1,14 +1,16 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useOptionsSnapshot } from '../../hooks/useMarketData'
+import { useSymbol } from '../../hooks/useSymbol'
 
 function fmt(n, d = 4) {
   return n != null ? Number(n).toFixed(d) : '—'
 }
 
 export default function OptionsFlow() {
-  const [symbol, setSymbol] = useState('SPY')
-  const [input, setInput]   = useState('SPY')
+  const { symbol, setSymbol } = useSymbol()
+  const [input, setInput]   = useState(symbol)
   const [filter, setFilter] = useState('all') // all | call | put
+  useEffect(() => { setInput(symbol) }, [symbol])  // follow global symbol
 
   const { data: contracts, loading } = useOptionsSnapshot(symbol)
 

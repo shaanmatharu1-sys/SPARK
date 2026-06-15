@@ -28,6 +28,7 @@ import Network         from './components/Network/Network'
 import Ties            from './components/Ties/Ties'
 import International    from './components/International/International'
 import AltData          from './components/AltData/AltData'
+import { SymbolProvider, useSymbol } from './hooks/useSymbol'
 import Events           from './components/Events/Events'
 import SupplyMap       from './components/SupplyMap/SupplyMap'
 
@@ -284,9 +285,18 @@ function YieldLayout() {
 
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
+  return (
+    <SymbolProvider initial="SPY">
+      <AppInner />
+    </SymbolProvider>
+  )
+}
+
+function AppInner() {
   const [activeTab,    setActiveTab]    = useState('overview')
-  const [chartSymbol,  setChartSymbol]  = useState('SPY')
-  const [symbolInput,  setSymbolInput]  = useState('SPY')
+  const { symbol: chartSymbol, setSymbol: setChartSymbol } = useSymbol()
+  const [symbolInput,  setSymbolInput]  = useState(chartSymbol)
+  useEffect(() => { setSymbolInput(chartSymbol) }, [chartSymbol])
   const [showWatchlist, setShowWatchlist] = useState(false)
 
   return (
@@ -370,7 +380,6 @@ export default function App() {
             onKeyDown={e => {
               if (e.key === 'Enter') {
                 setChartSymbol(symbolInput)
-                setActiveTab('overview')
               }
             }}
             style={{ width: 70 }}

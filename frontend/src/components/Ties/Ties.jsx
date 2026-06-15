@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useCompanyTies } from '../../hooks/useMarketData'
+import { useSymbol } from '../../hooks/useSymbol'
 
 const SECTOR_COLOR = {
   'Information Technology': '#6BA3D4',
@@ -47,11 +48,13 @@ function TieCard({ tie, side }) {
 }
 
 export default function Ties() {
-  const [input, setInput] = useState('F')
-  const [symbol, setSymbol] = useState('F')
+  const { symbol: globalSym, setSymbol: setGlobalSym } = useSymbol()
+  const [input, setInput] = useState(globalSym)
+  const [symbol, setSymbol] = useState(globalSym)
+  useEffect(() => { setInput(globalSym); setSymbol(globalSym) }, [globalSym])
   const { data, loading } = useCompanyTies(symbol)
 
-  const go = () => setSymbol(input.trim().toUpperCase())
+  const go = () => { setSymbol(input.trim().toUpperCase()); setGlobalSym(input.trim().toUpperCase()) }
 
   return (
     <div className="panel" style={{ height: '100%' }}>

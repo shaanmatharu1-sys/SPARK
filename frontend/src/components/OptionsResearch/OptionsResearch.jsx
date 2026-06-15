@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { useIVRank, useOptionsFlow, useOptionsSkew, optionsApi } from '../../hooks/useMarketData'
+import { useSymbol } from '../../hooks/useSymbol'
 
 // ── Payoff modeler ──
 function PayoffModeler({ symbol }) {
@@ -133,8 +134,9 @@ function Metrics({ symbol }) {
 }
 
 export default function OptionsResearch() {
-  const [symbol, setSymbol] = useState('SPY')
-  const [input, setInput] = useState('SPY')
+  const { symbol, setSymbol } = useSymbol()
+  const [input, setInput] = useState(symbol)
+  useEffect(() => { setInput(symbol) }, [symbol])
   const [tab, setTab] = useState('payoff')
 
   return (

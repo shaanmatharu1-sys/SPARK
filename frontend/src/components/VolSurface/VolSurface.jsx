@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useSymbol } from '../../hooks/useSymbol'
 import {
   LineChart, Line, ScatterChart, Scatter, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, ZAxis, Legend
@@ -21,8 +22,9 @@ function Metric({ label, value, color }) {
 const EXP_COLORS = ['#42a5f5', '#00c853', '#f0a500', '#7c4dff', '#ff3d57', '#00bcd4', '#ff8c00']
 
 export default function VolSurface() {
-  const [symbol, setSymbol] = useState('SPY')
-  const [input, setInput]   = useState('SPY')
+  const { symbol, setSymbol } = useSymbol()
+  const [input, setInput]   = useState(symbol)
+  useEffect(() => { setInput(symbol) }, [symbol])
   const { data, loading, error } = useVolSurface(symbol)
 
   const s = data?.summary || {}
