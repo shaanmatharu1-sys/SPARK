@@ -21,7 +21,7 @@ export default function YieldCurve() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">📉 Yield Curve</span>
+        <span className="title">Yield Curve</span>
         {spread != null && (
           <span style={{ fontSize: 10, color: spreadColor }}>
             2s10s: {spread >= 0 ? '+' : ''}{spread.toFixed(3)}%

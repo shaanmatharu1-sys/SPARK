@@ -199,3 +199,46 @@ export const watchlistApi = {
     const r = await fetch(`${API}/watchlist/reset`, { method: 'POST' }); return r.json()
   },
 }
+
+// ── Credit ──
+export function useCreditDashboard() {
+  return useFetch('/credit/dashboard', 600_000)
+}
+
+// ── Options research ──
+export function useOptionsStrategies() {
+  return useFetch('/options-research/strategies', null)
+}
+export function useIVRank(symbol) {
+  return useFetch(`/options-research/iv-rank/${symbol}`, 600_000)
+}
+export function useOptionsFlow(symbol) {
+  return useFetch(`/options-research/flow/${symbol}`, 120_000)
+}
+export function useOptionsSkew(symbol) {
+  return useFetch(`/options-research/skew/${symbol}`, 300_000)
+}
+export const optionsApi = {
+  async payoff(strategy, spot, params) {
+    const r = await fetch(`${API}/options-research/payoff`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ strategy, spot, params }),
+    }); return r.json()
+  },
+}
+
+// ── Portfolio (manual) ──
+export function usePortfolio() {
+  return useFetch('/portfolio', 60_000)
+}
+export const portfolioApi = {
+  async add(symbol, shares, cost_basis) {
+    const r = await fetch(`${API}/portfolio/add`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ symbol, shares, cost_basis }),
+    }); return r.json()
+  },
+  async remove(symbol) {
+    const r = await fetch(`${API}/portfolio/${symbol}`, { method: 'DELETE' }); return r.json()
+  },
+}

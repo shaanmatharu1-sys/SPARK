@@ -74,7 +74,7 @@ function AlgoCard({ algo, onRun, onReset, onDelete, busy }) {
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn active" disabled={busy}
               onClick={(e) => { e.stopPropagation(); onRun(cfg.algo_id) }}>
-              {busy ? 'Running…' : '▶ Run Once'}
+              {busy ? 'Running…' : 'Run Once'}
             </button>
             <button className="btn" onClick={(e) => { e.stopPropagation(); onReset(cfg.algo_id) }}>
               Reset
@@ -95,17 +95,28 @@ export default function Algo() {
   const { data: templates } = useAlgoTemplates()
   const [busy, setBusy] = useState(null)
   const [showNew, setShowNew] = useState(false)
+  const [capital, setCapital] = useState(100000)
+  const [maxPos, setMaxPos] = useState(20)
+  const [customUniverse, setCustomUniverse] = useState('')
 
   const createFromTemplate = async (t) => {
+    const universe = customUniverse.trim()
+      ? customUniverse.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+      : t.universe
     await algoApi.create({
-      name: t.name, strategy: t.strategy, universe: t.universe,
-      capital: 100000, max_position_pct: 0.2, params: t.params,
+      name: t.name, strategy: t.strategy, universe,
+      capital: Number(capital), max_position_pct: Number(maxPos) / 100, params: t.params,
     })
-    setShowNew(false)
+    setShowNew(false); setCustomUniverse('')
     refresh()
   }
 
   const run = async (id) => { setBusy(id); await algoApi.run(id); setBusy(null); refresh() }
+  const runAll = async () => {
+    setBusy('all')
+    for (const a of (algos || [])) { await algoApi.run(a.config.algo_id) }
+    setBusy(null); refresh()
+  }
   const reset = async (id) => { await algoApi.reset(id); refresh() }
   const remove = async (id) => { await algoApi.remove(id); refresh() }
 
@@ -115,6 +126,11 @@ export default function Algo() {
         <span className="title">Algorithm Lab</span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span className="dim" style={{ fontSize: 9 }}>PAPER · NO REAL EXECUTION</span>
+          {algos?.length > 0 && (
+            <button className="btn" onClick={runAll} disabled={busy === 'all'}>
+              {busy === 'all' ? 'Running all…' : 'Run All'}
+            </button>
+          )}
           <button className="btn active" onClick={() => setShowNew(!showNew)}>+ New Algo</button>
         </div>
       </div>
@@ -122,7 +138,26 @@ export default function Algo() {
         {showNew && templates && (
           <div style={{ marginBottom: 12, padding: 12, background: 'var(--bg-base)',
                         borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-            <div className="label" style={{ marginBottom: 8 }}>Choose a template</div>
+            {/* Customization controls */}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div>
+                <div className="label" style={{ marginBottom: 3 }}>Capital</div>
+                <input className="input" style={{ width: 90 }} type="number" value={capital}
+                  onChange={e => setCapital(e.target.value)} />
+              </div>
+              <div>
+                <div className="label" style={{ marginBottom: 3 }}>Max Pos %</div>
+                <input className="input" style={{ width: 60 }} type="number" value={maxPos}
+                  onChange={e => setMaxPos(e.target.value)} />
+              </div>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <div className="label" style={{ marginBottom: 3 }}>Universe (optional override)</div>
+                <input className="input" style={{ width: '100%', fontFamily: 'var(--font-mono)' }}
+                  placeholder="e.g. AAPL, MSFT, NVDA" value={customUniverse}
+                  onChange={e => setCustomUniverse(e.target.value.toUpperCase())} />
+              </div>
+            </div>
+            <div className="label" style={{ marginBottom: 8 }}>Choose a strategy template</div>
             {templates.map((t, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
                                     alignItems: 'center', padding: '8px 0',
@@ -140,7 +175,7 @@ export default function Algo() {
         {loading && <div className="dim" style={{ padding: 8 }}>Loading algorithms…</div>}
         {algos?.length === 0 && !showNew && (
           <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-dim)' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, marginBottom: 6 }}>
+            <div style={{ fontSize: 15, marginBottom: 6, fontWeight: 600 }}>
               No algorithms yet
             </div>
             <div style={{ fontSize: 11 }}>Create one from a template to start paper trading.</div>

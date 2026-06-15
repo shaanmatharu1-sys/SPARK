@@ -36,7 +36,7 @@ export default function WatchlistManager({ onClose, onChange }) {
     }}>
       <div className="panel-header">
         <span className="title">Edit Watchlist</span>
-        <button className="btn" onClick={onClose}>✕</button>
+        <button className="btn" onClick={onClose}>close</button>
       </div>
       <div style={{ padding: 12 }}>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
@@ -55,7 +55,7 @@ export default function WatchlistManager({ onClose, onChange }) {
               }}>
                 <span style={{ color: 'var(--gold)' }}>{s}</span>
                 <span style={{ cursor: 'pointer', color: 'var(--text-dim)' }}
-                  onClick={() => remove(s)}>✕</span>
+                  onClick={() => remove(s)}>remove</span>
               </div>
             ))}
           </div>

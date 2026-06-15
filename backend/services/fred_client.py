@@ -219,3 +219,103 @@ async def fetch_yield_curve_extended() -> dict:
     }
     await cache_set(cache_key, result, TTL_MACRO)
     return result
+
+
+# Credit market series (FRED, free)
+CREDIT_SERIES = {
+    "BAMLH0A0HYM2":    "HY OAS",          # ICE BofA US High Yield OAS
+    "BAMLC0A0CM":      "IG OAS",          # ICE BofA US Corporate (IG) OAS
+    "BAMLH0A0HYM2EY":  "HY Effective Yield",
+    "BAMLC0A0CMEY":    "IG Effective Yield",
+    "TEDRATE":         "TED Spread",
+    "T10Y2Y":          "2s10s",
+}
+
+
+async def fetch_credit_dashboard() -> dict:
+    """
+    Credit market dashboard: IG/HY spreads (OAS) + levels + recession signal +
+    credit-vs-equity risk-on/off read. All from FRED (free).
+    """
+    cache_key = "fred:credit"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+
+    async def latest(series_id):
+        obs = await fetch_series(series_id, limit=60)
+        vals = [o for o in obs if o.get("value") is not None]
+        return vals
+
+    hy = await latest("BAMLH0A0HYM2")     # HY OAS, in percent
+    ig = await latest("BAMLC0A0CM")       # IG OAS, in percent
+
+    def level_and_change(vals):
+        if not vals:
+            return None, None, []
+        cur = vals[-1]["value"]
+        # ~21 trading days ago for 1mo change
+        prior = vals[-22]["value"] if len(vals) >= 22 else vals[0]["value"]
+        return cur, round(cur - prior, 3), [
+            {"date": v["date"], "value": v["value"]} for v in vals[-60:]
+        ]
+
+    hy_oas, hy_chg, hy_hist = level_and_change(hy)
+    ig_oas, ig_chg, ig_hist = level_and_change(ig)
+
+    # Recession signal heuristics on HY OAS
+    # HY OAS > ~5.5% historically signals stress; > 8% serious stress.
+    signal = "calm"
+    if hy_oas is not None:
+        if hy_oas > 8.0:   signal = "stress"
+        elif hy_oas > 5.5: signal = "elevated"
+        elif hy_oas > 4.0: signal = "watch"
+
+    # Credit vs equity divergence read:
+    # widening credit spreads while equities hold up = risk-off warning
+    divergence = None
+    if hy_chg is not None:
+        if hy_chg > 0.3:
+            divergence = "credit_widening"   # credit getting nervous
+        elif hy_chg < -0.3:
+            divergence = "credit_tightening"  # risk-on
+        else:
+            divergence = "stable"
+
+    result = {
+        "hy_oas":      hy_oas,
+        "hy_change":   hy_chg,
+        "ig_oas":      ig_oas,
+        "ig_change":   ig_chg,
+        "hy_ig_ratio": round(hy_oas / ig_oas, 2) if (hy_oas and ig_oas) else None,
+        "signal":      signal,
+        "divergence":  divergence,
+        "hy_history":  hy_hist,
+        "ig_history":  ig_hist,
+        "interpretation": _credit_interp(signal, divergence, hy_oas),
+    }
+    await cache_set(cache_key, result, TTL_MACRO)
+    return result
+
+
+def _credit_interp(signal, divergence, hy_oas):
+    parts = []
+    if signal == "stress":
+        parts.append("High-yield spreads are at stressed levels, historically associated "
+                     "with recessions or financial crises.")
+    elif signal == "elevated":
+        parts.append("High-yield spreads are elevated, signaling rising credit risk and "
+                     "tighter financial conditions.")
+    elif signal == "watch":
+        parts.append("Credit spreads are modestly above their calm range, worth watching.")
+    else:
+        parts.append("Credit spreads are in a calm range, consistent with risk-on conditions.")
+
+    if divergence == "credit_widening":
+        parts.append("Spreads have widened recently; if equities remain elevated, this "
+                     "credit-equity divergence is a classic risk-off warning, since credit "
+                     "markets often lead equities at turning points.")
+    elif divergence == "credit_tightening":
+        parts.append("Spreads are tightening, a risk-on signal that credit markets are "
+                     "growing more comfortable.")
+    return " ".join(parts)

@@ -21,6 +21,9 @@ import CompanyDetail  from './components/Markets/CompanyDetail'
 import Traders        from './components/Traders/Traders'
 import YieldCurvePanel from './components/YieldCurve/YieldCurvePanel'
 import WatchlistManager from './components/Watchlist/WatchlistManager'
+import Credit          from './components/Credit/Credit'
+import OptionsResearch from './components/OptionsResearch/OptionsResearch'
+import Portfolio       from './components/Portfolio/Portfolio'
 
 // ── Top bar clock ────────────────────────────────────────────────
 function Clock() {
@@ -61,7 +64,9 @@ const TABS = [
   { id: 'markets',   label: 'MARKETS' },
   { id: 'whales',    label: 'WHALES' },
   { id: 'algo',      label: 'ALGO' },
+  { id: 'portfolio', label: 'PORTFOLIO' },
   { id: 'yield',     label: 'YIELD' },
+  { id: 'credit',    label: 'CREDIT' },
   { id: 'macro',     label: 'MACRO' },
   { id: 'news',      label: 'NEWS' },
 ]
@@ -160,9 +165,26 @@ function AlgoLayout() {
 
 function ResearchLayout() {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, height: '100%' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 4, height: '100%' }}>
       <Pairs />
       <Correlation />
+      <div style={{ gridColumn: '1 / 3' }}><OptionsResearch /></div>
+    </div>
+  )
+}
+
+function CreditLayout() {
+  return (
+    <div style={{ height: '100%', maxWidth: 1000, margin: '0 auto' }}>
+      <Credit />
+    </div>
+  )
+}
+
+function PortfolioLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <Portfolio />
     </div>
   )
 }
@@ -229,11 +251,10 @@ export default function App() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
           <span style={{
             fontFamily: 'var(--font-display)',
-            color: 'var(--gold)', fontWeight: 600, fontSize: 18,
-            letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: 7,
+            color: 'var(--gold)', fontWeight: 700, fontSize: 17,
+            letterSpacing: '0.12em', display: 'flex', alignItems: 'center', gap: 7,
           }}>
-            <span style={{ fontSize: 14, opacity: 0.8 }}>◆</span>
-            Spark
+            SPARK
           </span>
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 3 }}>
@@ -269,7 +290,7 @@ export default function App() {
             style={{ fontSize: 11 }}
             title="Edit watchlist"
           >
-            ☰ Watchlist
+            Watchlist
           </button>
           <span className="dim" style={{ fontSize: 9 }}>CHART:</span>
           <input
@@ -302,6 +323,8 @@ export default function App() {
         {activeTab === 'whales'   && <WhalesLayout />}
         {activeTab === 'yield'    && <YieldLayout />}
         {activeTab === 'algo'     && <AlgoLayout />}
+        {activeTab === 'portfolio' && <PortfolioLayout />}
+        {activeTab === 'credit'   && <CreditLayout />}
         {activeTab === 'macro'    && <MacroLayout />}
         {activeTab === 'news'     && <NewsLayout />}
       </div>

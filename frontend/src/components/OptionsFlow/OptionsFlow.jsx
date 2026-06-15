@@ -22,7 +22,7 @@ export default function OptionsFlow() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">⚡ Options Flow — Greeks</span>
+        <span className="title">Options Flow — Greeks</span>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           {['all','call','put'].map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{

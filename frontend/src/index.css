@@ -36,9 +36,9 @@
   --red-dim:        #4A2028;
 
   /* Fonts */
-  --font-display: 'Fraunces', Georgia, serif;
-  --font-ui:      'Inter', -apple-system, sans-serif;
-  --font-mono:    'JetBrains Mono', 'SF Mono', monospace;
+  --font-display: 'IBM Plex Sans', -apple-system, sans-serif;
+  --font-ui:      'IBM Plex Sans', -apple-system, sans-serif;
+  --font-mono:    'IBM Plex Mono', 'SF Mono', monospace;
 
   --radius:       8px;
   --radius-sm:    5px;
@@ -124,19 +124,20 @@ body {
 .panel-header .title {
   color: var(--text-primary);
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-/* subtle gold rule under the serif titles */
+/* subtle gold rule under titles */
 .panel-header .title::after {
   content: "";
   display: block;
-  width: 24px;
+  width: 20px;
   height: 2px;
   background: var(--gold);
-  margin-top: 3px;
+  margin-top: 4px;
   border-radius: 1px;
 }
 

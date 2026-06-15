@@ -23,7 +23,7 @@ function InsiderView() {
                 <td style={{ color: 'var(--gold)' }}>Form {t.form}</td>
                 <td>{t.filing_date}</td>
                 <td><a href={t.url} target="_blank" rel="noreferrer"
-                       style={{ color: 'var(--steel-bright)' }}>view ↗</a></td>
+                       style={{ color: 'var(--steel-bright)' }}>view</a></td>
               </tr>
             ))}
           </tbody>
@@ -99,7 +99,7 @@ function FundsView() {
                   <td style={{ color: 'var(--gold)' }}>{f.form}</td>
                   <td>{f.filing_date}</td>
                   <td><a href={f.url} target="_blank" rel="noreferrer"
-                         style={{ color: 'var(--steel-bright)' }}>view ↗</a></td>
+                         style={{ color: 'var(--steel-bright)' }}>view</a></td>
                 </tr>
               ))}
             </tbody>
