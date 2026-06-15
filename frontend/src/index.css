@@ -1,0 +1,244 @@
+/* ═══════════════════════════════════════════════════════════════
+   MERIDIAN — Quant Terminal  ·  "Midnight & Brass" theme
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  /* Base surfaces — deep navy, not black */
+  --bg-base:        #0B1929;
+  --bg-panel:       #0F2138;
+  --bg-panel-2:     #122845;
+  --bg-raised:      #16314F;
+  --bg-header:      #0A1726;
+
+  /* Borders & elevation */
+  --border:         #1A3354;
+  --border-soft:    #15294310;
+  --border-bright:  #244873;
+
+  /* Text */
+  --text-primary:   #E8EAED;
+  --text-secondary: #9DB2C9;
+  --text-dim:       #5E789A;
+  --text-faint:     #3D5572;
+
+  /* Brass gold — the signature accent, used sparingly */
+  --gold:           #C9A84C;
+  --gold-bright:    #E0C168;
+  --gold-dim:       #8A7536;
+
+  /* Steel blue — data, links, secondary accent */
+  --steel:          #4A7BA6;
+  --steel-bright:   #6BA3D4;
+
+  /* P&L — muted, refined (not neon) */
+  --green:          #3FB68B;
+  --green-dim:      #1C4A3A;
+  --red:            #E0556B;
+  --red-dim:        #4A2028;
+
+  /* Fonts */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-ui:      'Inter', -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', 'SF Mono', monospace;
+
+  --radius:       8px;
+  --radius-sm:    5px;
+
+  /* ── Backward-compat aliases (old components reference these) ── */
+  --yellow:         #C9A84C;   /* -> gold */
+  --blue:           #4A7BA6;   /* -> steel */
+  --blue-bright:    #6BA3D4;   /* -> steel-bright */
+  --purple:         #9B8Bd4;
+  --cyan:           #5BB8C4;
+  --border-accent:  #244873;   /* -> border-bright */
+  --bg-panel-hover: #16314F;   /* -> bg-raised */
+  --text-label:     #5E789A;   /* -> text-dim */
+  --green-dim:      #1C4A3A;
+  --red-dim:        #4A2028;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, #13294710 0%, transparent 60%),
+    var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures everywhere numbers matter */
+.mono, .bbg-table td, .data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Scrollbars — thin, gold on hover */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gold-dim); }
+
+/* ── Utility colors ── */
+.green  { color: var(--green); }
+.red    { color: var(--red); }
+.gold   { color: var(--gold); }
+.steel  { color: var(--steel-bright); }
+.dim    { color: var(--text-dim); }
+.faint  { color: var(--text-faint); }
+
+.label {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* ═══ Panels ═══════════════════════════════════════════════════ */
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+.panel-header {
+  background: linear-gradient(to bottom, var(--bg-panel-2), var(--bg-panel));
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.panel-header .title {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* subtle gold rule under the serif titles */
+.panel-header .title::after {
+  content: "";
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: var(--gold);
+  margin-top: 3px;
+  border-radius: 1px;
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ═══ Tables ═══════════════════════════════════════════════════ */
+.bbg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.bbg-table th {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 7px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-header);
+}
+.bbg-table th:first-child { text-align: left; }
+
+.bbg-table td {
+  padding: 6px 10px;
+  text-align: right;
+  border-bottom: 1px solid rgba(26,51,84,0.4);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.bbg-table td:first-child {
+  text-align: left;
+  font-family: var(--font-ui);
+}
+.bbg-table tr:hover td { background: rgba(36,72,115,0.18); }
+
+/* ═══ Buttons & inputs ═════════════════════════════════════════ */
+.btn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  padding: 4px 11px;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn:hover { border-color: var(--gold-dim); color: var(--text-primary); }
+.btn.active {
+  background: linear-gradient(to bottom, var(--gold), var(--gold-dim));
+  color: #0B1929;
+  border-color: var(--gold);
+  font-weight: 600;
+}
+
+.input {
+  background: var(--bg-base);
+  border: 1px solid var(--border-bright);
+  color: var(--gold-bright);
+  padding: 4px 9px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.input:focus { border-color: var(--gold); }
+
+/* ═══ Flash animations — softer ════════════════════════════════ */
+@keyframes flash-green {
+  0%   { background: rgba(63,182,139,0.25); }
+  100% { background: transparent; }
+}
+@keyframes flash-red {
+  0%   { background: rgba(224,85,107,0.25); }
+  100% { background: transparent; }
+}
+.flash-green { animation: flash-green 0.7s ease-out; }
+.flash-red   { animation: flash-red   0.7s ease-out; }
+
+/* Live indicator */
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(63,182,139,0.4); }
+  50%       { opacity: 0.6; box-shadow: 0 0 0 4px rgba(63,182,139,0); }
+}
+.live-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 2s infinite;
+  display: inline-block;
+  margin-right: 6px;
+}
