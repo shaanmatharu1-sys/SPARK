@@ -269,3 +269,11 @@ export function useCompanyTies(symbol) {
 export function useInternational() {
   return useFetch('/international/all', 60_000)
 }
+
+// ── Alt-data & events ──
+export function useAltData() {
+  return useFetch('/altdata/all', 300_000)  // 5 min
+}
+export function useEvents() {
+  return useFetch('/events/all', 600_000)    // 10 min
+}

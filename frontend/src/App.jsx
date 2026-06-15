@@ -27,6 +27,8 @@ import Portfolio       from './components/Portfolio/Portfolio'
 import Network         from './components/Network/Network'
 import Ties            from './components/Ties/Ties'
 import International    from './components/International/International'
+import AltData          from './components/AltData/AltData'
+import Events           from './components/Events/Events'
 import SupplyMap       from './components/SupplyMap/SupplyMap'
 
 // ── Top bar clock ────────────────────────────────────────────────
@@ -67,6 +69,8 @@ const TABS = [
   { id: 'research',  label: 'RESEARCH' },
   { id: 'markets',   label: 'MARKETS' },
   { id: 'world',     label: 'WORLD' },
+  { id: 'events',    label: 'EVENTS' },
+  { id: 'altdata',   label: 'ALT-DATA' },
   { id: 'whales',    label: 'WHALES' },
   { id: 'network',   label: 'NETWORK' },
   { id: 'ties',      label: 'TIES' },
@@ -223,6 +227,22 @@ function WorldLayout() {
   )
 }
 
+function EventsLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <Events />
+    </div>
+  )
+}
+
+function AltDataLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <AltData />
+    </div>
+  )
+}
+
 function SupplyLayout() {
   return (
     <div style={{ height: '100%' }}>
@@ -363,6 +383,8 @@ export default function App() {
         {activeTab === 'research' && <ResearchLayout />}
         {activeTab === 'markets'  && <MarketsLayout />}
         {activeTab === 'world'    && <WorldLayout />}
+        {activeTab === 'events'   && <EventsLayout />}
+        {activeTab === 'altdata'  && <AltDataLayout />}
         {activeTab === 'whales'   && <WhalesLayout />}
         {activeTab === 'network'  && <NetworkLayout />}
         {activeTab === 'ties'     && <TiesLayout />}
