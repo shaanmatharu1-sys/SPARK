@@ -319,3 +319,94 @@ def _credit_interp(signal, divergence, hy_oas):
         parts.append("Spreads are tightening, a risk-on signal that credit markets are "
                      "growing more comfortable.")
     return " ".join(parts)
+
+
+# Expanded macro series — broad coverage across categories (all free FRED)
+MACRO_EXPANDED = {
+    "growth": {
+        "GDPC1":      "Real GDP",
+        "INDPRO":     "Industrial Production",
+        "PCEC96":     "Real Consumer Spending",
+        "RSAFS":      "Retail Sales",
+        "HOUST":      "Housing Starts",
+        "UMCSENT":    "Consumer Sentiment",
+    },
+    "inflation": {
+        "CPIAUCSL":   "CPI",
+        "CPILFESL":   "Core CPI",
+        "PCEPI":      "PCE Price Index",
+        "PCEPILFE":   "Core PCE",
+        "PPIACO":     "PPI All Commodities",
+        "T5YIE":      "5Y Breakeven Inflation",
+    },
+    "labor": {
+        "UNRATE":     "Unemployment Rate",
+        "PAYEMS":     "Nonfarm Payrolls",
+        "ICSA":       "Initial Jobless Claims",
+        "CIVPART":    "Labor Force Participation",
+        "AHETPI":     "Avg Hourly Earnings",
+        "JTSJOL":     "Job Openings (JOLTS)",
+    },
+    "rates": {
+        "FEDFUNDS":   "Fed Funds Rate",
+        "DGS2":       "2Y Treasury",
+        "DGS10":      "10Y Treasury",
+        "DGS30":      "30Y Treasury",
+        "MORTGAGE30US": "30Y Mortgage Rate",
+        "SOFR":       "SOFR",
+    },
+    "money_credit": {
+        "M2SL":       "M2 Money Supply",
+        "WALCL":      "Fed Balance Sheet",
+        "BAMLH0A0HYM2": "HY Credit Spread",
+        "BAMLC0A0CM": "IG Credit Spread",
+        "DRCCLACBS":  "Credit Card Delinquency",
+        "TOTALSL":    "Consumer Credit",
+    },
+    "markets": {
+        "VIXCLS":     "VIX",
+        "DCOILWTICO": "WTI Crude",
+        "DEXUSEU":    "EUR/USD",
+        "DTWEXBGS":   "Dollar Index (Broad)",
+        "GOLDAMGBD228NLBM": "Gold",
+        "DHHNGSP":    "Natural Gas",
+    },
+}
+
+
+async def fetch_macro_expanded(category: str = None) -> dict:
+    """
+    Broad macro dashboard across categories. If category given, returns just that
+    group; otherwise returns all, each series with latest value + recent change.
+    """
+    cache_key = f"fred:macro_exp:{category or 'all'}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+
+    cats = {category: MACRO_EXPANDED[category]} if category in MACRO_EXPANDED else MACRO_EXPANDED
+
+    out = {}
+    import asyncio
+    for cat, series in cats.items():
+        async def one(sid, label):
+            obs = await fetch_series(sid, limit=14)
+            vals = [o for o in obs if o.get("value") is not None]
+            if not vals:
+                return label, None
+            cur = vals[-1]["value"]
+            prev = vals[-2]["value"] if len(vals) >= 2 else cur
+            yr_ago = vals[0]["value"]
+            return label, {
+                "id":        sid,
+                "label":     label,
+                "value":     cur,
+                "change":    round(cur - prev, 3),
+                "date":      vals[-1]["date"],
+                "spark":     [v["value"] for v in vals[-12:]],
+            }
+        results = await asyncio.gather(*[one(sid, lbl) for sid, lbl in series.items()])
+        out[cat] = {lbl: data for lbl, data in results if data}
+
+    await cache_set(cache_key, out, TTL_MACRO)
+    return out

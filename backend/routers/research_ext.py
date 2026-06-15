@@ -5,7 +5,10 @@ from fastapi import APIRouter, Query, Body
 from pydantic import BaseModel
 
 from services.fred_client import fetch_credit_dashboard
-from services.polygon_client import fetch_snapshot, fetch_options_chain
+from services.polygon_client import fetch_snapshot, fetch_options_chain, fetch_agg_bars
+from analytics.network.engine import build_network
+import datetime
+import asyncio
 from analytics.options.engine import (
     payoff_diagram, build_strategy, iv_rank_percentile, putcall_signal,
     vol_skew, STRATEGY_LIST,
@@ -23,6 +26,36 @@ router = APIRouter(tags=["research_ext"])
 async def credit_dashboard():
     """IG/HY credit spreads, recession signal, credit-vs-equity divergence."""
     return await fetch_credit_dashboard()
+
+
+@router.get("/network")
+async def correlation_network(
+    symbols:   str = Query(..., description="comma-separated tickers"),
+    days:      int = Query(default=180),
+    threshold: float = Query(default=0.4),
+):
+    """
+    Correlation-network graph for any set of symbols the user requests.
+    Returns nodes + weighted edges + clusters for the relationship map.
+    """
+    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()][:40]
+    if len(syms) < 2:
+        return {"error": "provide at least 2 symbols"}
+
+    today = datetime.date.today().isoformat()
+    start = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+
+    async def closes(sym):
+        bars = await fetch_agg_bars(sym, 1, "day", start, today, limit=5000)
+        return sym, [b["c"] for b in bars if b.get("c") is not None]
+
+    results = await asyncio.gather(*[closes(s) for s in syms], return_exceptions=True)
+    universe = {s: c for r in results if isinstance(r, tuple) for s, c in [r] if len(c) >= 30}
+
+    if len(universe) < 2:
+        return {"error": "insufficient price data", "loaded": list(universe.keys())}
+
+    return build_network(universe, threshold=threshold)
 
 
 # ════════════════════════════════════════════════════════════════
@@ -142,6 +175,10 @@ async def get_portfolio():
                 "total_pnl": 0, "n_positions": 0, "empty": True}
     symbols = [h["symbol"].upper() for h in holdings]
     snap = await fetch_snapshot(symbols)
+
+    # Last-known prices cache, so a momentarily-missing snapshot doesn't blank a position
+    last_known = await cache_get("portfolio:last_prices") or {}
+
     prices = {}
     for s in symbols:
         d = snap.get(s, {})
@@ -150,7 +187,21 @@ async def get_portfolio():
               or (d.get("prevDay", {}) or {}).get("c"))
         if px:
             prices[s] = px
-    return compute_portfolio(holdings, prices)
+            last_known[s] = px              # remember it
+        elif s in last_known:
+            prices[s] = last_known[s]       # fall back to last good price
+        else:
+            # Brand-new symbol whose snapshot isn't warm yet: use cost basis
+            # so the row still renders instead of going blank.
+            h = next((x for x in holdings if x["symbol"].upper() == s), None)
+            if h and h.get("cost_basis"):
+                prices[s] = float(h["cost_basis"])
+
+    await cache_set("portfolio:last_prices", last_known, ttl=86400)
+    result = compute_portfolio(holdings, prices)
+    # Flag any symbols still awaiting a real quote, so the UI can show a subtle marker
+    result["pending_prices"] = [s for s in symbols if s not in {**last_known}]
+    return result
 
 
 @router.put("/portfolio")

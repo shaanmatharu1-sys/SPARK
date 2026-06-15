@@ -10,9 +10,12 @@ export default function Portfolio() {
   const add = async () => {
     if (!sym || !shares || !cost) return
     await portfolioApi.add(sym.toUpperCase(), parseFloat(shares), parseFloat(cost))
-    setSym(''); setShares(''); setCost(''); refresh()
+    setSym(''); setShares(''); setCost('')
+    // Small delay lets the backend warm the new symbol's snapshot before refetch,
+    // avoiding a transient blank while the quote populates.
+    setTimeout(refresh, 600)
   }
-  const remove = async (s) => { await portfolioApi.remove(s); refresh() }
+  const remove = async (s) => { await portfolioApi.remove(s); setTimeout(refresh, 200) }
 
   const pnlColor = (v) => v == null ? 'var(--text-dim)' : v >= 0 ? 'var(--green)' : 'var(--red)'
 

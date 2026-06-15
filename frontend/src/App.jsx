@@ -24,6 +24,7 @@ import WatchlistManager from './components/Watchlist/WatchlistManager'
 import Credit          from './components/Credit/Credit'
 import OptionsResearch from './components/OptionsResearch/OptionsResearch'
 import Portfolio       from './components/Portfolio/Portfolio'
+import Network         from './components/Network/Network'
 
 // ── Top bar clock ────────────────────────────────────────────────
 function Clock() {
@@ -63,6 +64,7 @@ const TABS = [
   { id: 'research',  label: 'RESEARCH' },
   { id: 'markets',   label: 'MARKETS' },
   { id: 'whales',    label: 'WHALES' },
+  { id: 'network',   label: 'NETWORK' },
   { id: 'algo',      label: 'ALGO' },
   { id: 'portfolio', label: 'PORTFOLIO' },
   { id: 'yield',     label: 'YIELD' },
@@ -185,6 +187,14 @@ function PortfolioLayout() {
   return (
     <div style={{ height: '100%' }}>
       <Portfolio />
+    </div>
+  )
+}
+
+function NetworkLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <Network />
     </div>
   )
 }
@@ -321,6 +331,7 @@ export default function App() {
         {activeTab === 'research' && <ResearchLayout />}
         {activeTab === 'markets'  && <MarketsLayout />}
         {activeTab === 'whales'   && <WhalesLayout />}
+        {activeTab === 'network'  && <NetworkLayout />}
         {activeTab === 'yield'    && <YieldLayout />}
         {activeTab === 'algo'     && <AlgoLayout />}
         {activeTab === 'portfolio' && <PortfolioLayout />}

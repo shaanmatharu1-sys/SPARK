@@ -9,6 +9,7 @@ export function useFetch(endpoint, intervalMs = null) {
   const [error,   setError]   = useState(null)
 
   const fetch_ = useCallback(async () => {
+    if (!endpoint) { setLoading(false); return }
     try {
       const r = await fetch(`${API}${endpoint}`)
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -241,4 +242,15 @@ export const portfolioApi = {
   async remove(symbol) {
     const r = await fetch(`${API}/portfolio/${symbol}`, { method: 'DELETE' }); return r.json()
   },
+}
+
+// ── Correlation network ──
+export function useNetwork(symbols, threshold = 0.4) {
+  const q = symbols ? `?symbols=${symbols}&threshold=${threshold}` : ''
+  return useFetch(symbols ? `/network${q}` : null, null)
+}
+
+// ── Expanded macro ──
+export function useMacroExpanded(category) {
+  return useFetch(`/macro/expanded${category ? '?category='+category : ''}`, 600_000)
 }

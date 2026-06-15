@@ -31,6 +31,13 @@ async def get_yield_curve_extended():
     return await fetch_yield_curve_extended()
 
 
+@router.get("/expanded")
+async def get_macro_expanded(category: str = None):
+    """GET /macro/expanded — Broad macro across growth/inflation/labor/rates/credit/markets."""
+    from services.fred_client import fetch_macro_expanded
+    return await fetch_macro_expanded(category)
+
+
 @router.get("/series/{series_id}")
 async def get_series(series_id: str, limit: int = Query(default=10)):
     """GET /macro/series/DGS10?limit=20 — Latest N observations."""
