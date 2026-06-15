@@ -96,6 +96,12 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(options_ws.start(), name="polygon_options_ws")
     logger.info("[Polygon] WebSocket feeds starting...")
 
+    # Start vessel-tracking feed (AISstream) if configured
+    from services import vessel_client
+    vessel_client.start_feed()
+    if vessel_client.AISSTREAM_KEY:
+        logger.info("[Vessel] AISstream feed starting...")
+
     # Start scheduler
     setup_scheduler()
 

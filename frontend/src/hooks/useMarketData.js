@@ -254,3 +254,8 @@ export function useNetwork(symbols, threshold = 0.4) {
 export function useMacroExpanded(category) {
   return useFetch(`/macro/expanded${category ? '?category='+category : ''}`, 600_000)
 }
+
+// ── Vessel map (AISstream) ──
+export function useVessels() {
+  return useFetch('/markets/vessels', 20_000)
+}

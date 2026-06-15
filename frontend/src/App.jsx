@@ -25,6 +25,7 @@ import Credit          from './components/Credit/Credit'
 import OptionsResearch from './components/OptionsResearch/OptionsResearch'
 import Portfolio       from './components/Portfolio/Portfolio'
 import Network         from './components/Network/Network'
+import SupplyMap       from './components/SupplyMap/SupplyMap'
 
 // ── Top bar clock ────────────────────────────────────────────────
 function Clock() {
@@ -65,6 +66,7 @@ const TABS = [
   { id: 'markets',   label: 'MARKETS' },
   { id: 'whales',    label: 'WHALES' },
   { id: 'network',   label: 'NETWORK' },
+  { id: 'supply',    label: 'SUPPLY' },
   { id: 'algo',      label: 'ALGO' },
   { id: 'portfolio', label: 'PORTFOLIO' },
   { id: 'yield',     label: 'YIELD' },
@@ -195,6 +197,14 @@ function NetworkLayout() {
   return (
     <div style={{ height: '100%' }}>
       <Network />
+    </div>
+  )
+}
+
+function SupplyLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <SupplyMap />
     </div>
   )
 }
@@ -332,6 +342,7 @@ export default function App() {
         {activeTab === 'markets'  && <MarketsLayout />}
         {activeTab === 'whales'   && <WhalesLayout />}
         {activeTab === 'network'  && <NetworkLayout />}
+        {activeTab === 'supply'   && <SupplyLayout />}
         {activeTab === 'yield'    && <YieldLayout />}
         {activeTab === 'algo'     && <AlgoLayout />}
         {activeTab === 'portfolio' && <PortfolioLayout />}

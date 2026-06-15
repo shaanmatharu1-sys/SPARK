@@ -52,3 +52,10 @@ async def get_filings(symbol: str, form_type: str = Query(default=None),
 async def get_social(symbol: str):
     """Social media sentiment (StockTwits, best-effort)."""
     return await fetch_social_sentiment(symbol)
+
+
+@router.get("/vessels")
+async def get_vessels(limit: int = Query(default=500)):
+    """Live vessel positions from AISstream for the supply-routes map."""
+    from services.vessel_client import get_vessels as _gv
+    return _gv(limit)
