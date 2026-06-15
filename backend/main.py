@@ -75,9 +75,9 @@ async def lifespan(app: FastAPI):
 
     # Redis health check
     if await redis_ping():
-        logger.info("[Redis] ✓ Connected")
+        logger.info("[Redis] Connected")
     else:
-        logger.warning("[Redis] ✗ Not reachable — caching disabled")
+        logger.warning("[Redis] Not reachable — caching disabled")
 
     # Warm up caches on startup
     logger.info("[Startup] Pre-warming caches...")

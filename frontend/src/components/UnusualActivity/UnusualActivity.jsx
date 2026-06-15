@@ -29,7 +29,7 @@ export default function UnusualActivity() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">🚨 Unusual Activity</span>
+        <span className="title">Unusual Activity</span>
         <div style={{ display: 'flex', gap: 4 }}>
           <input
             value={symbol}

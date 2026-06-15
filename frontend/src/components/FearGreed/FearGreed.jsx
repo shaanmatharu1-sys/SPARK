@@ -45,7 +45,7 @@ export default function FearGreed() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">🌡 Fear &amp; Greed</span>
+        <span className="title">Fear &amp; Greed</span>
         <span className="dim" style={{ fontSize: 9 }}>CNN</span>
       </div>
       <div className="panel-body">

@@ -22,7 +22,7 @@ export default function SectorHeatmap() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">🗺 Sector Heatmap</span>
+        <span className="title">Sector Heatmap</span>
         <span className="dim" style={{ fontSize: 9 }}>30s refresh</span>
       </div>
       <div className="panel-body" style={{ padding: 8 }}>

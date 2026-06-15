@@ -39,7 +39,7 @@ async def _get(session: aiohttp.ClientSession, path: str, params: dict = {}) -> 
                 return await r.json()
             else:
                 body = await r.text()
-                logger.warning(f"[Polygon REST] {url} → {r.status}: {body[:200]}")
+                logger.warning(f"[Polygon REST] {url} -> {r.status}: {body[:200]}")
                 return None
     except Exception as e:
         logger.error(f"[Polygon REST] {url} error: {e}")
@@ -184,7 +184,7 @@ class PolygonStocksWS:
             await self._ws.close()
 
     async def _connect(self):
-        logger.info(f"[Polygon WS Stocks] Connecting → {POLYGON_WS_STOCKS}")
+        logger.info(f"[Polygon WS Stocks] Connecting -> {POLYGON_WS_STOCKS}")
         async with websockets.connect(POLYGON_WS_STOCKS, ping_interval=20) as ws:
             self._ws = ws
             async for raw in ws:
@@ -280,7 +280,7 @@ class PolygonOptionsWS:
         self.running = False
 
     async def _connect(self):
-        logger.info(f"[Polygon WS Options] Connecting → {POLYGON_WS_OPTIONS}")
+        logger.info(f"[Polygon WS Options] Connecting -> {POLYGON_WS_OPTIONS}")
         async with websockets.connect(POLYGON_WS_OPTIONS, ping_interval=20) as ws:
             async for raw in ws:
                 messages = json.loads(raw)

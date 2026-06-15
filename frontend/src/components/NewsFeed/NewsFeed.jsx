@@ -9,7 +9,7 @@ export default function NewsFeed() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">📰 News Feed</span>
+        <span className="title">News Feed</span>
         <div style={{ display: 'flex', gap: 4 }}>
           <input
             value={query}

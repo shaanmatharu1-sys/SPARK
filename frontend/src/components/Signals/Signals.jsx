@@ -49,7 +49,7 @@ export default function Signals() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">📡 Signals</span>
+        <span className="title">Signals</span>
         <input value={input} onChange={e => setInput(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && setSymbol(input)}
           style={{ background: '#0a0c10', border: '1px solid var(--border-accent)',

@@ -76,7 +76,7 @@ export default function MarketMonitor() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">⬡ Market Monitor</span>
+        <span className="title">Market Monitor</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {wsStatus === 'connected' && <span className="live-dot" />}
           <span className="dim" style={{ fontSize: 9 }}>

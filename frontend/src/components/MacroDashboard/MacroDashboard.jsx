@@ -27,7 +27,7 @@ export default function MacroDashboard() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">🌐 Macro Dashboard</span>
+        <span className="title">Macro Dashboard</span>
         <span className="dim" style={{ fontSize: 9 }}>FRED</span>
       </div>
       <div className="panel-body">

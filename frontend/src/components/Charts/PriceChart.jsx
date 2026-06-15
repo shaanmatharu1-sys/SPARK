@@ -102,7 +102,7 @@ export default function PriceChart({ symbol = 'SPY' }) {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">📊 {symbol} — Chart</span>
+        <span className="title">{symbol} — Chart</span>
         <div style={{ display: 'flex', gap: 4 }}>
           {TIMESPANS.map(t => (
             <button

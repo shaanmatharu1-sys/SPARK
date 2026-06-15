@@ -38,7 +38,7 @@ export default function Factors() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">🎯 Factor Rankings</span>
+        <span className="title">Factor Rankings</span>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           {['watchlist', 'sectors'].map(u => (
             <button key={u} onClick={() => setUniverse(u)} style={{

@@ -33,23 +33,23 @@ Expected cost: **~$10–15/month.** Set a spending limit (Step 7) to cap risk.
 
 ## Step 1 — Create the project + Redis
 
-1. Railway dashboard → **New Project** → **Deploy from GitHub repo** → pick your repo.
-2. Once it imports, click **+ New** → **Database** → **Add Redis**.
+1. Railway dashboard -> **New Project** -> **Deploy from GitHub repo** -> pick your repo.
+2. Once it imports, click **+ New** -> **Database** -> **Add Redis**.
    Railway provisions Redis and exposes a `REDIS_URL` variable automatically.
 
 ## Step 2 — Configure the backend service
 
-1. Railway may auto-create a service from your repo. Click it → **Settings**.
+1. Railway may auto-create a service from your repo. Click it -> **Settings**.
 2. Set **Root Directory** to `backend`.
    Railway will detect the `Dockerfile` there and build it (this compiles the
    C++ extensions — first build takes ~3–4 min).
-3. Under **Settings → Networking**, click **Generate Domain**. Copy the URL —
+3. Under **Settings -> Networking**, click **Generate Domain**. Copy the URL —
    e.g. `https://meridian-backend-production.up.railway.app`. This is your
    **backend URL**.
 
 ## Step 3 — Backend environment variables
 
-In the backend service → **Variables**, add:
+In the backend service -> **Variables**, add:
 
 | Variable | Value |
 |----------|-------|
@@ -65,31 +65,31 @@ In the backend service → **Variables**, add:
 
 ## Step 4 — Create the frontend service
 
-1. **+ New** → **GitHub Repo** → same repo again.
-2. Click the new service → **Settings** → set **Root Directory** to `frontend`.
+1. **+ New** -> **GitHub Repo** -> same repo again.
+2. Click the new service -> **Settings** -> set **Root Directory** to `frontend`.
    It'll detect the frontend `Dockerfile`.
-3. **Settings → Networking** → **Generate Domain**. Copy this — it's your
+3. **Settings -> Networking** -> **Generate Domain**. Copy this — it's your
    **frontend URL** (the one you'll actually visit).
 
 ## Step 5 — Frontend environment variable
 
-In the frontend service → **Variables**, add:
+In the frontend service -> **Variables**, add:
 
 | Variable | Value |
 |----------|-------|
 | `VITE_API_BASE` | your **backend URL** from Step 2 (e.g. `https://meridian-backend-production.up.railway.app`) |
 
-Then **redeploy** the frontend (Deployments → ⋮ → Redeploy) so the build picks
+Then **redeploy** the frontend (Deployments -> ... -> Redeploy) so the build picks
 up the variable — it's baked into the static bundle at build time.
 
 ## Step 6 — Wire CORS
 
-Go back to the **backend** service → **Variables** → set `CORS_ORIGINS` to your
+Go back to the **backend** service -> **Variables** -> set `CORS_ORIGINS` to your
 **frontend URL** from Step 4 (no trailing slash). Backend redeploys automatically.
 
 ## Step 7 — Set a spending limit (do this!)
 
-Project → **Settings** → **Usage** → set a hard limit (e.g. **$20/month**).
+Project -> **Settings** -> **Usage** -> set a hard limit (e.g. **$20/month**).
 Railway stops services rather than billing past it. This caps your risk.
 
 ---
@@ -106,7 +106,7 @@ Railway stops services rather than billing past it. This caps your risk.
 
 ## How updates work
 
-Push to your `main` branch → Railway auto-rebuilds and redeploys both services.
+Push to your `main` branch -> Railway auto-rebuilds and redeploys both services.
 No manual steps.
 
 ```bash

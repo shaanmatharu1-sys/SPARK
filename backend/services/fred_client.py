@@ -22,7 +22,7 @@ async def _fred_get(session: aiohttp.ClientSession, endpoint: str, params: dict)
             if r.status == 200:
                 return await r.json()
             body = await r.text()
-            logger.warning(f"[FRED] {endpoint} → {r.status}: {body[:200]}")
+            logger.warning(f"[FRED] {endpoint} -> {r.status}: {body[:200]}")
             return None
     except Exception as e:
         logger.error(f"[FRED] {endpoint} error: {e}")

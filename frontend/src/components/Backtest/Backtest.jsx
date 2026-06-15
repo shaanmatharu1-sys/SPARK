@@ -56,7 +56,7 @@ export default function Backtest() {
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
-        <span className="title">🔬 Backtest Lab</span>
+        <span className="title">Backtest Lab</span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span className="dim" style={{ fontSize: 9 }}>DAYS:</span>
           {[365, 730, 1095].map(d => (
