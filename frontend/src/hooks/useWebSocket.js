@@ -11,7 +11,11 @@ export function useWebSocket(path, onMessage, enabled = true) {
   const wsRef       = useRef(null)
   const reconnTimer = useRef(null)
   const backoff     = useRef(1000)
+  const onMessageRef = useRef(onMessage)
   const [status, setStatus] = useState('disconnected') // connected | disconnected | error
+
+  // Keep the latest onMessage without forcing a reconnect each render
+  useEffect(() => { onMessageRef.current = onMessage }, [onMessage])
 
   const connect = useCallback(() => {
     if (!enabled || !path) return
@@ -27,7 +31,7 @@ export function useWebSocket(path, onMessage, enabled = true) {
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data)
-          onMessage(data)
+          onMessageRef.current?.(data)
         } catch {}
       }
 
@@ -45,7 +49,7 @@ export function useWebSocket(path, onMessage, enabled = true) {
     } catch (e) {
       setStatus('error')
     }
-  }, [path, onMessage, enabled])
+  }, [path, enabled])
 
   useEffect(() => {
     connect()

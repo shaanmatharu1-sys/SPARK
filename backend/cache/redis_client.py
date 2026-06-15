@@ -17,7 +17,12 @@ async def get_redis() -> aioredis.Redis:
             REDIS_URL,
             encoding="utf-8",
             decode_responses=True,
-            max_connections=20,
+            max_connections=50,
+            socket_timeout=30,             # don't block forever on a read
+            socket_connect_timeout=10,
+            socket_keepalive=True,         # detect dead connections
+            health_check_interval=30,      # periodically validate pooled connections
+            retry_on_timeout=True,
         )
     return _pool
 
@@ -46,17 +51,42 @@ async def publish(channel: str, message: dict):
 
 
 async def subscribe(channel: str):
-    """Return an async generator yielding messages from a Redis pub/sub channel."""
+    """
+    Async generator yielding messages from a Redis pub/sub channel.
+    Uses get_message with a timeout (rather than the indefinitely-blocking
+    listen()) so a slow/dead Redis read can't hang the connection forever,
+    and so client disconnects tear down cleanly without leaking connections.
+    """
     r = await get_redis()
     pubsub = r.pubsub()
     await pubsub.subscribe(channel)
     try:
-        async for msg in pubsub.listen():
-            if msg["type"] == "message":
-                yield json.loads(msg["data"])
+        while True:
+            try:
+                msg = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=5.0
+                )
+            except (asyncio.TimeoutError, ConnectionError):
+                # transient: yield nothing, loop continues (keeps WS alive)
+                await asyncio.sleep(0.5)
+                continue
+            if msg and msg.get("type") == "message":
+                try:
+                    yield json.loads(msg["data"])
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            else:
+                # no message this cycle; yield control
+                await asyncio.sleep(0.05)
     finally:
-        await pubsub.unsubscribe(channel)
-        await pubsub.close()
+        try:
+            await pubsub.unsubscribe(channel)
+            # redis>=5 uses aclose(); older uses close()
+            closer = getattr(pubsub, "aclose", None) or getattr(pubsub, "close", None)
+            if closer:
+                await closer()
+        except Exception:
+            pass
 
 
 async def hset_quote(symbol: str, data: dict):
