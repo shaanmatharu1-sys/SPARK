@@ -25,6 +25,7 @@ import Credit          from './components/Credit/Credit'
 import OptionsResearch from './components/OptionsResearch/OptionsResearch'
 import Portfolio       from './components/Portfolio/Portfolio'
 import Network         from './components/Network/Network'
+import Ties            from './components/Ties/Ties'
 import SupplyMap       from './components/SupplyMap/SupplyMap'
 
 // ── Top bar clock ────────────────────────────────────────────────
@@ -66,6 +67,7 @@ const TABS = [
   { id: 'markets',   label: 'MARKETS' },
   { id: 'whales',    label: 'WHALES' },
   { id: 'network',   label: 'NETWORK' },
+  { id: 'ties',      label: 'TIES' },
   { id: 'supply',    label: 'SUPPLY' },
   { id: 'algo',      label: 'ALGO' },
   { id: 'portfolio', label: 'PORTFOLIO' },
@@ -77,6 +79,7 @@ const TABS = [
 
 // ── Layout for each tab ──────────────────────────────────────────
 function OverviewLayout({ chartSymbol }) {
+  const cell = { minHeight: 0, minWidth: 0, overflow: 'hidden' }
   return (
     <div style={{
       display: 'grid',
@@ -84,21 +87,22 @@ function OverviewLayout({ chartSymbol }) {
       gridTemplateRows:    '1fr 1fr',
       gap: 6,
       height: '100%',
+      minHeight: 0,
     }}>
       {/* Chart dominates — spans both rows on the left */}
-      <div style={{ gridColumn: '1', gridRow: '1 / 3' }}>
+      <div style={{ ...cell, gridColumn: '1', gridRow: '1 / 3' }}>
         <PriceChart symbol={chartSymbol} />
       </div>
-      <div style={{ gridColumn: '2', gridRow: '1' }}>
+      <div style={{ ...cell, gridColumn: '2', gridRow: '1' }}>
         <MarketMonitor />
       </div>
-      <div style={{ gridColumn: '3', gridRow: '1' }}>
+      <div style={{ ...cell, gridColumn: '3', gridRow: '1' }}>
         <FearGreed />
       </div>
-      <div style={{ gridColumn: '2', gridRow: '2' }}>
+      <div style={{ ...cell, gridColumn: '2', gridRow: '2' }}>
         <SectorHeatmap />
       </div>
-      <div style={{ gridColumn: '3', gridRow: '2' }}>
+      <div style={{ ...cell, gridColumn: '3', gridRow: '2' }}>
         <YieldCurve />
       </div>
     </div>
@@ -197,6 +201,14 @@ function NetworkLayout() {
   return (
     <div style={{ height: '100%' }}>
       <Network />
+    </div>
+  )
+}
+
+function TiesLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <Ties />
     </div>
   )
 }
@@ -342,6 +354,7 @@ export default function App() {
         {activeTab === 'markets'  && <MarketsLayout />}
         {activeTab === 'whales'   && <WhalesLayout />}
         {activeTab === 'network'  && <NetworkLayout />}
+        {activeTab === 'ties'     && <TiesLayout />}
         {activeTab === 'supply'   && <SupplyLayout />}
         {activeTab === 'yield'    && <YieldLayout />}
         {activeTab === 'algo'     && <AlgoLayout />}

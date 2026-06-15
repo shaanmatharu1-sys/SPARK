@@ -58,6 +58,27 @@ async def correlation_network(
     return build_network(universe, threshold=threshold)
 
 
+@router.get("/ties")
+async def company_ties(symbol: str = Query(...), top_n: int = Query(default=14)):
+    """
+    Bloomberg SPLC-style relationship web for ONE company.
+    Pick a ticker; returns its strongest ties across the ~500-name universe,
+    split into same-industry peers and cross-industry correlates.
+    Reads a precomputed correlation cache (refreshed on schedule).
+    """
+    from analytics.relationships.engine import get_company_ties
+    return await get_company_ties(symbol.upper(), top_n=top_n)
+
+
+@router.get("/ties/universe")
+async def ties_universe():
+    """List the available universe (symbols + names) for the relationship map picker."""
+    from data_universe import UNIVERSE
+    return {"count": len(UNIVERSE),
+            "companies": [{"symbol": s, "name": d["name"], "sector": d["sector"]}
+                          for s, d in sorted(UNIVERSE.items())]}
+
+
 # ════════════════════════════════════════════════════════════════
 # OPTIONS RESEARCH
 # ════════════════════════════════════════════════════════════════

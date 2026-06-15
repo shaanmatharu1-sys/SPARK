@@ -5,6 +5,7 @@ FastAPI app with WebSocket support, background data feeds, and scheduler.
 Run:
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 """
+import datetime
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -62,8 +63,21 @@ def setup_scheduler():
     # Unusual activity — refresh every 60s
     scheduler.add_job(fetch_unusual_activity, "interval", seconds=60, id="unusual_activity")
 
+    # Company-relationship matrix — precompute every 4 hours (heavy: ~500 symbols)
+    async def _refresh_relationships():
+        try:
+            from analytics.relationships.engine import precompute_relationships
+            await precompute_relationships()
+        except Exception as e:
+            logger.warning(f"[Relationships] precompute failed: {e}")
+    scheduler.add_job(_refresh_relationships, "interval", hours=4, id="relationships")
+    # Prime it once shortly after startup so the first user click is warm
+    scheduler.add_job(_refresh_relationships, "date",
+                      run_date=datetime.datetime.now() + datetime.timedelta(seconds=90),
+                      id="relationships_prime")
+
     scheduler.start()
-    logger.info("[Scheduler] Started — macro/1hr, F&G/10min, news/5min, sectors/30s")
+    logger.info("[Scheduler] Started — macro/1hr, F&G/10min, news/5min, sectors/30s, ties/4hr")
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────────────

@@ -259,3 +259,8 @@ export function useMacroExpanded(category) {
 export function useVessels() {
   return useFetch('/markets/vessels', 20_000)
 }
+
+// ── Company relationship ties (SPLC-style) ──
+export function useCompanyTies(symbol) {
+  return useFetch(symbol ? `/ties?symbol=${symbol}` : null, null)
+}
