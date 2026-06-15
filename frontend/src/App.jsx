@@ -309,20 +309,25 @@ export default function App() {
         flexShrink:    0,
         height:        36,
       }}>
-        {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+        {/* Logo + scrollable tabs */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: 1 }}>
           <span style={{
             fontFamily: 'var(--font-display)',
             color: 'var(--gold)', fontWeight: 700, fontSize: 17,
             letterSpacing: '0.12em', display: 'flex', alignItems: 'center', gap: 7,
+            flexShrink: 0,
           }}>
             SPARK
           </span>
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: 3 }}>
+          {/* Tabs — horizontally scrollable strip */}
+          <div className="tab-strip" style={{
+            display: 'flex', gap: 3, overflowX: 'auto', overflowY: 'hidden',
+            minWidth: 0, flex: 1, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+          }}>
             {TABS.map(t => (
               <button
                 key={t.id}
+                ref={t.id === activeTab ? (el) => el?.scrollIntoView({ inline: 'nearest', block: 'nearest' }) : null}
                 onClick={() => setActiveTab(t.id)}
                 style={{
                   background:   activeTab === t.id ? 'var(--bg-raised)' : 'transparent',
@@ -336,6 +341,8 @@ export default function App() {
                   fontFamily:   'var(--font-ui)',
                   letterSpacing: '0.05em',
                   transition:   'all 0.15s ease',
+                  whiteSpace:   'nowrap',
+                  flexShrink:   0,
                 }}
               >
                 {t.label}
@@ -345,7 +352,8 @@ export default function App() {
         </div>
 
         {/* Symbol lookup + watchlist editor */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative',
+                      flexShrink: 0, marginLeft: 12 }}>
           <button
             onClick={() => setShowWatchlist(!showWatchlist)}
             className="btn"
@@ -372,7 +380,9 @@ export default function App() {
           )}
         </div>
 
-        <Clock />
+        <div style={{ flexShrink: 0 }}>
+          <Clock />
+        </div>
       </div>
 
       {/* ── Main Content ─────────────────────────────────────────── */}

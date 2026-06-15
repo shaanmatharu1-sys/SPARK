@@ -243,3 +243,7 @@ body {
   display: inline-block;
   margin-right: 6px;
 }
+
+/* Horizontally scrollable tab strip — hide scrollbar, keep scroll */
+.tab-strip::-webkit-scrollbar { height: 0; width: 0; display: none; }
+.tab-strip { scrollbar-width: none; -ms-overflow-style: none; }
