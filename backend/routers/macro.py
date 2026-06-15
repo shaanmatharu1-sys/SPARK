@@ -24,6 +24,13 @@ async def get_yield_curve():
     return await fetch_yield_curve()
 
 
+@router.get("/yield-curve/extended")
+async def get_yield_curve_extended():
+    """GET /macro/yield-curve/extended — Curve + spreads + inversion + interpretation."""
+    from services.fred_client import fetch_yield_curve_extended
+    return await fetch_yield_curve_extended()
+
+
 @router.get("/series/{series_id}")
 async def get_series(series_id: str, limit: int = Query(default=10)):
     """GET /macro/series/DGS10?limit=20 — Latest N observations."""

@@ -158,3 +158,44 @@ export function useSocial(symbol) {
 export function useWatchlist() {
   return useFetch('/watchlist/', null)
 }
+
+// ── Traders ──
+export function useInsider(symbol) {
+  return useFetch(`/traders/insider/${symbol}`, 600_000)
+}
+export function useCongress(chamber = 'house') {
+  return useFetch(`/traders/congress?chamber=${chamber}`, 600_000)
+}
+export function useFunds() {
+  return useFetch('/traders/funds', null)
+}
+export function use13F(fundKey) {
+  return useFetch(`/traders/13f/${fundKey}`, 3600_000)
+}
+
+// ── Extended yield curve ──
+export function useYieldCurveExtended() {
+  return useFetch('/macro/yield-curve/extended', 3600_000)
+}
+
+// ── Watchlist actions ──
+export const watchlistApi = {
+  async get() {
+    const r = await fetch(`${API}/watchlist/`); return r.json()
+  },
+  async set(symbols) {
+    const r = await fetch(`${API}/watchlist/`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ symbols }),
+    }); return r.json()
+  },
+  async add(symbol) {
+    const r = await fetch(`${API}/watchlist/add/${symbol}`, { method: 'POST' }); return r.json()
+  },
+  async remove(symbol) {
+    const r = await fetch(`${API}/watchlist/${symbol}`, { method: 'DELETE' }); return r.json()
+  },
+  async reset() {
+    const r = await fetch(`${API}/watchlist/reset`, { method: 'POST' }); return r.json()
+  },
+}

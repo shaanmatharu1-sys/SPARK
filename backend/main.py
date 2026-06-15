@@ -17,7 +17,7 @@ from config import CORS_ORIGINS, DEFAULT_WATCHLIST, SECTOR_ETFS
 from cache.redis_client import ping as redis_ping
 
 # ── Routers ──────────────────────────────────────────────────────────────────
-from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist
+from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders
 
 # ── Background WS feeds ──────────────────────────────────────────────────────
 from services.polygon_client import PolygonStocksWS, PolygonOptionsWS
@@ -140,6 +140,7 @@ app.include_router(algo.router)
 app.include_router(research.router)
 app.include_router(markets.router)
 app.include_router(watchlist.router)
+app.include_router(traders.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

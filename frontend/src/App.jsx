@@ -18,6 +18,9 @@ import Correlation    from './components/Research/Correlation'
 import Movers         from './components/Markets/Movers'
 import Crypto         from './components/Markets/Crypto'
 import CompanyDetail  from './components/Markets/CompanyDetail'
+import Traders        from './components/Traders/Traders'
+import YieldCurvePanel from './components/YieldCurve/YieldCurvePanel'
+import WatchlistManager from './components/Watchlist/WatchlistManager'
 
 // ── Top bar clock ────────────────────────────────────────────────
 function Clock() {
@@ -56,7 +59,9 @@ const TABS = [
   { id: 'quant',     label: 'QUANT' },
   { id: 'research',  label: 'RESEARCH' },
   { id: 'markets',   label: 'MARKETS' },
+  { id: 'whales',    label: 'WHALES' },
   { id: 'algo',      label: 'ALGO' },
+  { id: 'yield',     label: 'YIELD' },
   { id: 'macro',     label: 'MACRO' },
   { id: 'news',      label: 'NEWS' },
 ]
@@ -66,24 +71,25 @@ function OverviewLayout({ chartSymbol }) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr 220px',
-      gridTemplateRows:    '280px 1fr',
-      gap: 4,
+      gridTemplateColumns: '2fr 1fr 240px',
+      gridTemplateRows:    '1fr 1fr',
+      gap: 6,
       height: '100%',
     }}>
-      <div style={{ gridColumn: '1', gridRow: '1' }}>
+      {/* Chart dominates — spans both rows on the left */}
+      <div style={{ gridColumn: '1', gridRow: '1 / 3' }}>
         <PriceChart symbol={chartSymbol} />
       </div>
       <div style={{ gridColumn: '2', gridRow: '1' }}>
         <MarketMonitor />
       </div>
-      <div style={{ gridColumn: '3', gridRow: '1 / 3' }}>
+      <div style={{ gridColumn: '3', gridRow: '1' }}>
         <FearGreed />
       </div>
-      <div style={{ gridColumn: '1', gridRow: '2' }}>
+      <div style={{ gridColumn: '2', gridRow: '2' }}>
         <SectorHeatmap />
       </div>
-      <div style={{ gridColumn: '2', gridRow: '2' }}>
+      <div style={{ gridColumn: '3', gridRow: '2' }}>
         <YieldCurve />
       </div>
     </div>
@@ -176,11 +182,28 @@ function MarketsLayout() {
   )
 }
 
+function WhalesLayout() {
+  return (
+    <div style={{ height: '100%', maxWidth: 1000, margin: '0 auto' }}>
+      <Traders />
+    </div>
+  )
+}
+
+function YieldLayout() {
+  return (
+    <div style={{ height: '100%', maxWidth: 1100, margin: '0 auto' }}>
+      <YieldCurvePanel />
+    </div>
+  )
+}
+
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
   const [activeTab,    setActiveTab]    = useState('overview')
   const [chartSymbol,  setChartSymbol]  = useState('SPY')
   const [symbolInput,  setSymbolInput]  = useState('SPY')
+  const [showWatchlist, setShowWatchlist] = useState(false)
 
   return (
     <div style={{
@@ -238,10 +261,19 @@ export default function App() {
           </div>
         </div>
 
-        {/* Symbol lookup */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* Symbol lookup + watchlist editor */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+          <button
+            onClick={() => setShowWatchlist(!showWatchlist)}
+            className="btn"
+            style={{ fontSize: 11 }}
+            title="Edit watchlist"
+          >
+            ☰ Watchlist
+          </button>
           <span className="dim" style={{ fontSize: 9 }}>CHART:</span>
           <input
+            className="input"
             value={symbolInput}
             onChange={e => setSymbolInput(e.target.value.toUpperCase())}
             onKeyDown={e => {
@@ -250,18 +282,11 @@ export default function App() {
                 setActiveTab('overview')
               }
             }}
-            style={{
-              background:   '#0a0c10',
-              border:       '1px solid var(--border-accent)',
-              color:        'var(--yellow)',
-              padding:      '3px 8px',
-              fontSize:     11,
-              borderRadius: 3,
-              fontFamily:   'Courier New',
-              width:        70,
-              fontWeight:   'bold',
-            }}
+            style={{ width: 70 }}
           />
+          {showWatchlist && (
+            <WatchlistManager onClose={() => setShowWatchlist(false)} />
+          )}
         </div>
 
         <Clock />
@@ -274,6 +299,8 @@ export default function App() {
         {activeTab === 'quant'    && <QuantLayout />}
         {activeTab === 'research' && <ResearchLayout />}
         {activeTab === 'markets'  && <MarketsLayout />}
+        {activeTab === 'whales'   && <WhalesLayout />}
+        {activeTab === 'yield'    && <YieldLayout />}
         {activeTab === 'algo'     && <AlgoLayout />}
         {activeTab === 'macro'    && <MacroLayout />}
         {activeTab === 'news'     && <NewsLayout />}

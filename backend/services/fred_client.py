@@ -170,3 +170,52 @@ async def fetch_series_history(series_id: str, years: int = 5) -> list[dict]:
     ]
     await cache_set(cache_key, obs, TTL_MACRO)
     return obs
+
+
+async def fetch_yield_curve_extended() -> dict:
+    """
+    Extended yield curve data: current curve + key spreads + inversion status
+    + interpretation. Powers the dedicated Yield Curve tab.
+    """
+    cache_key = "fred:yield_curve_ext"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+
+    curve = await fetch_yield_curve()  # current curve + 2s10s
+
+    # Key spreads (recession indicators)
+    spreads = {}
+    if "10Y" in curve and "2Y" in curve:
+        spreads["2s10s"] = round(curve["10Y"] - curve["2Y"], 3)
+    if "10Y" in curve and "3M" in curve:
+        spreads["3m10y"] = round(curve["10Y"] - curve["3M"], 3)
+    if "30Y" in curve and "5Y" in curve:
+        spreads["5s30s"] = round(curve["30Y"] - curve["5Y"], 3)
+
+    # Inversion status
+    inverted = [k for k, v in spreads.items() if v < 0]
+    if "2s10s" in spreads and spreads["2s10s"] < 0:
+        shape = "inverted"
+        interp = ("The 2s10s spread is inverted (2Y yields more than 10Y). "
+                  "Historically this has preceded recessions by 6-18 months, as it "
+                  "signals the market expects the Fed to cut rates in the future.")
+    elif "2s10s" in spreads and spreads["2s10s"] < 0.5:
+        shape = "flat"
+        interp = ("The curve is relatively flat. This often signals uncertainty about "
+                  "the economic outlook or a transition between policy regimes.")
+    else:
+        shape = "normal"
+        interp = ("The curve is upward-sloping (normal). Longer maturities yield more "
+                  "than shorter ones, consistent with expectations of stable or growing "
+                  "economic activity.")
+
+    result = {
+        "curve":      {k: v for k, v in curve.items() if k not in ("2s10s",)},
+        "spreads":    spreads,
+        "inverted_spreads": inverted,
+        "shape":      shape,
+        "interpretation": interp,
+    }
+    await cache_set(cache_key, result, TTL_MACRO)
+    return result
