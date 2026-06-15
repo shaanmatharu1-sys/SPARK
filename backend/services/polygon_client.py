@@ -102,7 +102,7 @@ async def fetch_unusual_activity(symbol: str = None) -> list:
     if cached:
         return cached
 
-    params = {"order": "desc", "sort": "day.volume", "limit": 50}
+    params = {"order": "desc", "limit": 50}
     if symbol:
         params["underlying_asset"] = symbol
 
@@ -306,3 +306,107 @@ class PolygonOptionsWS:
             "ts":       msg.get("t"),
         }
         await publish("options", data)
+
+
+# ════════════════════════════════════════════════════════════════
+# MOVERS, CRYPTO, EARNINGS  (REST)
+# ════════════════════════════════════════════════════════════════
+
+async def fetch_movers(direction: str = "gainers") -> list:
+    """Top gainers or losers for the day. direction: 'gainers' | 'losers'."""
+    cache_key = f"movers:{direction}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+    async with aiohttp.ClientSession() as session:
+        data = await _get(session,
+            f"/v2/snapshot/locale/us/markets/stocks/{direction}", {})
+    movers = []
+    for t in (data.get("tickers", []) if data else []):
+        movers.append({
+            "symbol":     t.get("ticker"),
+            "price":      t.get("lastTrade", {}).get("p") or t.get("day", {}).get("c"),
+            "change":     t.get("todaysChange"),
+            "change_pct": round(t.get("todaysChangePerc", 0), 2),
+            "volume":     t.get("day", {}).get("v"),
+        })
+    await cache_set(cache_key, movers, 30)
+    return movers
+
+
+async def fetch_crypto_snapshot(symbols: list[str] = None) -> dict:
+    """Crypto snapshots. symbols like ['X:BTCUSD','X:ETHUSD']."""
+    symbols = symbols or ["X:BTCUSD", "X:ETHUSD", "X:SOLUSD", "X:DOGEUSD"]
+    cache_key = "crypto:snapshot"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+    tickers = ",".join(symbols)
+    async with aiohttp.ClientSession() as session:
+        data = await _get(session,
+            "/v2/snapshot/locale/global/markets/crypto/tickers", {"tickers": tickers})
+    result = {}
+    for t in (data.get("tickers", []) if data else []):
+        sym = t.get("ticker", "")
+        day = t.get("day", {})
+        prev = t.get("prevDay", {})
+        result[sym] = {
+            "symbol":     sym.replace("X:", ""),
+            "price":      t.get("lastTrade", {}).get("p") or day.get("c"),
+            "change_pct": round(t.get("todaysChangePerc", 0), 2),
+            "high":       day.get("h"),
+            "low":        day.get("l"),
+            "volume":     day.get("v"),
+            "prev_close": prev.get("c"),
+        }
+    await cache_set(cache_key, result, 10)
+    return result
+
+
+async def fetch_crypto_bars(symbol: str = "X:BTCUSD", days: int = 30) -> list:
+    """OHLCV bars for a crypto symbol."""
+    import datetime
+    today = datetime.date.today().isoformat()
+    start = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    cache_key = f"crypto_bars:{symbol}:{days}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+    async with aiohttp.ClientSession() as session:
+        data = await _get(session,
+            f"/v2/aggs/ticker/{symbol}/range/1/day/{start}/{today}",
+            {"adjusted": "true", "sort": "asc", "limit": 5000})
+    bars = data.get("results", []) if data else []
+    await cache_set(cache_key, bars, 300)
+    return bars
+
+
+async def fetch_earnings(symbol: str) -> dict:
+    """
+    Earnings data via Polygon. Uses the financials endpoint for actuals.
+    Note: estimate/surprise data availability depends on Polygon tier.
+    """
+    cache_key = f"earnings:{symbol.upper()}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+    async with aiohttp.ClientSession() as session:
+        data = await _get(session, "/vX/reference/financials",
+            {"ticker": symbol.upper(), "limit": 8, "timeframe": "quarterly",
+             "order": "desc", "sort": "filing_date"})
+    results = []
+    for f in (data.get("results", []) if data else []):
+        fin = f.get("financials", {})
+        inc = fin.get("income_statement", {})
+        results.append({
+            "fiscal_period": f.get("fiscal_period"),
+            "fiscal_year":   f.get("fiscal_year"),
+            "filing_date":   f.get("filing_date"),
+            "revenue":       inc.get("revenues", {}).get("value"),
+            "net_income":    inc.get("net_income_loss", {}).get("value"),
+            "eps_basic":     inc.get("basic_earnings_per_share", {}).get("value"),
+            "eps_diluted":   inc.get("diluted_earnings_per_share", {}).get("value"),
+        })
+    out = {"symbol": symbol.upper(), "quarters": results}
+    await cache_set(cache_key, out, 3600)
+    return out

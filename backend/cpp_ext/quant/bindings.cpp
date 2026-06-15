@@ -67,6 +67,33 @@ PYBIND11_MODULE(quant_module, m) {
     m.def("perf_stats", &perf_stats,
           "strategy_returns"_a, "rf_rate"_a = 0.0, "periods_per_year"_a = 252.0);
 
+    // ── Pairs trading ─────────────────────────────────────────────────────────
+    py::class_<PairResult>(m, "PairResult")
+        .def_readonly("hedge_ratio",     &PairResult::hedge_ratio)
+        .def_readonly("intercept",       &PairResult::intercept)
+        .def_readonly("correlation",     &PairResult::correlation)
+        .def_readonly("adf_stat",        &PairResult::adf_stat)
+        .def_readonly("half_life",       &PairResult::half_life)
+        .def_readonly("spread_z",        &PairResult::spread_z)
+        .def_readonly("spread_mean",     &PairResult::spread_mean)
+        .def_readonly("spread_std",      &PairResult::spread_std)
+        .def_readonly("is_cointegrated", &PairResult::is_cointegrated)
+        .def("to_dict", [](const PairResult& p) {
+            return py::dict(
+                "hedge_ratio"_a     = p.hedge_ratio,
+                "intercept"_a       = p.intercept,
+                "correlation"_a     = p.correlation,
+                "adf_stat"_a        = p.adf_stat,
+                "half_life"_a       = p.half_life,
+                "spread_z"_a        = p.spread_z,
+                "spread_mean"_a     = p.spread_mean,
+                "spread_std"_a      = p.spread_std,
+                "is_cointegrated"_a = p.is_cointegrated
+            );
+        });
+    m.def("test_pair", &test_pair, "y"_a, "x"_a);
+    m.def("ols", &ols, "y"_a, "x"_a);
+
     // ── Backtest ──────────────────────────────────────────────────────────────
     py::class_<BacktestResult>(m, "BacktestResult")
         .def_readonly("strategy_returns", &BacktestResult::strategy_returns)

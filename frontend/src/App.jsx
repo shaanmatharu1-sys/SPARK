@@ -13,6 +13,11 @@ import Signals        from './components/Signals/Signals'
 import Factors        from './components/Factors/Factors'
 import VolSurface     from './components/VolSurface/VolSurface'
 import Algo           from './components/Algo/Algo'
+import Pairs          from './components/Research/Pairs'
+import Correlation    from './components/Research/Correlation'
+import Movers         from './components/Markets/Movers'
+import Crypto         from './components/Markets/Crypto'
+import CompanyDetail  from './components/Markets/CompanyDetail'
 
 // ── Top bar clock ────────────────────────────────────────────────
 function Clock() {
@@ -49,6 +54,8 @@ const TABS = [
   { id: 'overview',  label: 'OVERVIEW' },
   { id: 'options',   label: 'OPTIONS' },
   { id: 'quant',     label: 'QUANT' },
+  { id: 'research',  label: 'RESEARCH' },
+  { id: 'markets',   label: 'MARKETS' },
   { id: 'algo',      label: 'ALGO' },
   { id: 'macro',     label: 'MACRO' },
   { id: 'news',      label: 'NEWS' },
@@ -145,6 +152,30 @@ function AlgoLayout() {
   )
 }
 
+function ResearchLayout() {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, height: '100%' }}>
+      <Pairs />
+      <Correlation />
+    </div>
+  )
+}
+
+function MarketsLayout() {
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gridTemplateRows: '1fr 1fr',
+      gap: 4, height: '100%',
+    }}>
+      <div style={{ gridColumn: '1', gridRow: '1' }}><Movers /></div>
+      <div style={{ gridColumn: '1', gridRow: '2' }}><Crypto /></div>
+      <div style={{ gridColumn: '2', gridRow: '1 / 3' }}><CompanyDetail /></div>
+    </div>
+  )
+}
+
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
   const [activeTab,    setActiveTab]    = useState('overview')
@@ -179,7 +210,7 @@ export default function App() {
             letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: 7,
           }}>
             <span style={{ fontSize: 14, opacity: 0.8 }}>◆</span>
-            SPARK
+            Spark
           </span>
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 3 }}>
@@ -241,6 +272,8 @@ export default function App() {
         {activeTab === 'overview' && <OverviewLayout chartSymbol={chartSymbol} />}
         {activeTab === 'options'  && <OptionsLayout />}
         {activeTab === 'quant'    && <QuantLayout />}
+        {activeTab === 'research' && <ResearchLayout />}
+        {activeTab === 'markets'  && <MarketsLayout />}
         {activeTab === 'algo'     && <AlgoLayout />}
         {activeTab === 'macro'    && <MacroLayout />}
         {activeTab === 'news'     && <NewsLayout />}

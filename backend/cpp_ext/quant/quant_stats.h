@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <cstddef>
+#include <utility>
 
 namespace quant {
 
@@ -81,4 +82,27 @@ struct PerfStats {
 PerfStats perf_stats(const Vec& strategy_returns, double rf_rate = 0.0,
                      double periods_per_year = 252.0);
 
+// ── Pairs trading / cointegration ────────────────────────────────────────────
+
+struct PairResult {
+    double hedge_ratio;     // beta from regressing y on x (OLS slope)
+    double intercept;       // OLS intercept
+    double correlation;     // price correlation
+    double adf_stat;        // Augmented Dickey-Fuller test statistic on spread
+    double half_life;       // OU half-life of the spread (periods)
+    double spread_z;        // current spread z-score
+    double spread_mean;     // mean of spread
+    double spread_std;      // std of spread
+    bool   is_cointegrated; // adf_stat < critical value (~ -2.86 at 5%)
+};
+
+/** Test a pair (y, x) for cointegration. Regresses y on x, then runs an
+ *  ADF-style stationarity test on the residual spread, plus half-life and
+ *  current z-score. Both series must be equal length, price levels. */
+PairResult test_pair(const Vec& y, const Vec& x);
+
+/** Simple OLS slope+intercept of y on x. Returns {slope, intercept}. */
+std::pair<double,double> ols(const Vec& y, const Vec& x);
+
 } // namespace quant
+

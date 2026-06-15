@@ -291,4 +291,81 @@ PerfStats perf_stats(const Vec& r, double rf, double ppy) {
     return p;
 }
 
+// ── Pairs trading / cointegration ────────────────────────────────────────────
+
+std::pair<double,double> ols(const Vec& y, const Vec& x) {
+    std::size_t n = std::min(y.size(), x.size());
+    if (n < 2) return {0.0, 0.0};
+    double mx = 0, my = 0;
+    for (std::size_t i = 0; i < n; ++i) { mx += x[i]; my += y[i]; }
+    mx /= n; my /= n;
+    double cov = 0, varx = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        cov  += (x[i]-mx)*(y[i]-my);
+        varx += (x[i]-mx)*(x[i]-mx);
+    }
+    double slope = varx > 0 ? cov/varx : 0.0;
+    double intercept = my - slope*mx;
+    return {slope, intercept};
+}
+
+PairResult test_pair(const Vec& y, const Vec& x) {
+    PairResult r{};
+    std::size_t n = std::min(y.size(), x.size());
+    if (n < 30) return r;
+
+    // 1. OLS hedge ratio: y = intercept + hedge_ratio * x
+    auto [slope, intercept] = ols(y, x);
+    r.hedge_ratio = slope;
+    r.intercept   = intercept;
+    r.correlation = correlation(y, x);
+
+    // 2. Spread = y - (intercept + slope*x)
+    Vec spread(n);
+    for (std::size_t i = 0; i < n; ++i)
+        spread[i] = y[i] - (intercept + slope * x[i]);
+
+    // 3. Spread stats
+    double sm = 0; for (double s : spread) sm += s; sm /= n;
+    double ss = 0; for (double s : spread) ss += (s-sm)*(s-sm);
+    double sd = std::sqrt(ss/(n-1));
+    r.spread_mean = sm;
+    r.spread_std  = sd;
+    r.spread_z    = sd > 0 ? (spread[n-1] - sm)/sd : 0.0;
+
+    // 4. ADF-style test: regress Δspread on lagged spread level.
+    //    Δs_t = a + rho * s_{t-1} ; ADF stat = rho / SE(rho).
+    //    More negative -> more stationary -> cointegrated.
+    Vec ds, lag;
+    for (std::size_t i = 1; i < n; ++i) {
+        ds.push_back(spread[i] - spread[i-1]);
+        lag.push_back(spread[i-1]);
+    }
+    std::size_t m = ds.size();
+    auto [rho, a] = ols(ds, lag);
+
+    // Standard error of rho
+    double mlag = 0; for (double v : lag) mlag += v; mlag /= m;
+    double var_lag = 0; for (double v : lag) var_lag += (v-mlag)*(v-mlag);
+    double sse = 0;
+    for (std::size_t i = 0; i < m; ++i) {
+        double pred = a + rho*lag[i];
+        sse += (ds[i]-pred)*(ds[i]-pred);
+    }
+    double se_resid = std::sqrt(sse/(m-2));
+    double se_rho = var_lag > 0 ? se_resid/std::sqrt(var_lag) : 1e9;
+    r.adf_stat = se_rho > 0 ? rho/se_rho : 0.0;
+
+    // 5. Half-life of mean reversion: -ln(2)/ln(1+rho)
+    if (rho < 0 && rho > -2)
+        r.half_life = -std::log(2.0)/std::log(1.0+rho);
+    else
+        r.half_life = -1.0;
+
+    // 6. Cointegration flag: ADF stat below ~ -2.86 (5% critical value)
+    r.is_cointegrated = r.adf_stat < -2.86;
+
+    return r;
+}
+
 } // namespace quant

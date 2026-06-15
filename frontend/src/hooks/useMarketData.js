@@ -125,3 +125,36 @@ export const algoApi = {
     return r.json()
   },
 }
+
+// ── Research: pairs, correlation, macro matrix ──
+export function usePairs(universe = 'watchlist', days = 400) {
+  return useFetch(`/research/pairs?universe=${universe}&days=${days}`, 300_000)
+}
+export function useCorrelation(universe = 'watchlist', days = 120) {
+  return useFetch(`/research/correlation?universe=${universe}&days=${days}`, 300_000)
+}
+export function useMacroMatrix(days = 250) {
+  return useFetch(`/research/macro-matrix?days=${days}`, 300_000)
+}
+
+// ── Markets: movers, crypto, earnings, filings, social ──
+export function useMovers(direction = 'gainers') {
+  return useFetch(`/markets/movers?direction=${direction}`, 30_000)
+}
+export function useCrypto() {
+  return useFetch('/markets/crypto', 15_000)
+}
+export function useEarnings(symbol) {
+  return useFetch(`/markets/earnings/${symbol}`, 3600_000)
+}
+export function useFilings(symbol) {
+  return useFetch(`/markets/filings/${symbol}`, 3600_000)
+}
+export function useSocial(symbol) {
+  return useFetch(`/markets/social/${symbol}`, 300_000)
+}
+
+// ── Watchlist ──
+export function useWatchlist() {
+  return useFetch('/watchlist/', null)
+}
