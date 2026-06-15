@@ -59,3 +59,22 @@ async def get_vessels(limit: int = Query(default=500)):
     """Live vessel positions from AISstream for the supply-routes map."""
     from services.vessel_client import get_vessels as _gv
     return _gv(limit)
+
+
+@router.get("/portwatch")
+async def portwatch_all():
+    """IMF PortWatch: chokepoint transit trends + port activity (weekly, official)."""
+    from services.portwatch_client import fetch_portwatch_all
+    return await fetch_portwatch_all()
+
+
+@router.get("/portwatch/chokepoints")
+async def portwatch_chokepoints():
+    from services.portwatch_client import fetch_chokepoint_trends
+    return await fetch_chokepoint_trends()
+
+
+@router.get("/portwatch/ports")
+async def portwatch_ports():
+    from services.portwatch_client import fetch_port_activity
+    return await fetch_port_activity()

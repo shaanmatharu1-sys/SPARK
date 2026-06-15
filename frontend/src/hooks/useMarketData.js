@@ -277,3 +277,8 @@ export function useAltData() {
 export function useEvents() {
   return useFetch('/events/all', 600_000)    // 10 min
 }
+
+// ── IMF PortWatch ──
+export function usePortWatch() {
+  return useFetch('/markets/portwatch', 3600_000)  // 1h (weekly data)
+}

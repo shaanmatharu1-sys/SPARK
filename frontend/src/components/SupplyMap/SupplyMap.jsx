@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
-import { useVessels } from '../../hooks/useMarketData'
+import { useVessels, usePortWatch } from '../../hooks/useMarketData'
 import { WORLD_LAND } from './worldGeo'
 
 // Base equirectangular projection (lon/lat -> base x/y), then a view transform
@@ -16,7 +16,7 @@ const CHOKEPOINTS = [
   { name: 'Gibraltar', lon: -5.6,  lat: 36.0 },
 ]
 
-function VesselMap({ vessels }) {
+function VesselMap({ vessels, ports = [] }) {
   const canvasRef = useRef(null)
   const [hover, setHover] = useState(null)
   // View transform: scale + translate (in screen px)
@@ -77,6 +77,22 @@ function VesselMap({ vessels }) {
       ctx.textAlign = 'left'; ctx.fillText(cp.name, x + 5, y + 3)
     }
 
+    // ── PortWatch major ports (sized by activity, colored by trend) ──
+    const maxAct = Math.max(1, ...ports.map(p => p.avg_7d || 0))
+    for (const p of ports) {
+      if (p.lat == null || p.lon == null) continue
+      const [x, y] = tf(p.lon, p.lat)
+      if (x < -10 || x > W + 10 || y < -10 || y > H + 10) continue
+      const r = 2 + Math.sqrt((p.avg_7d || 0) / maxAct) * 7
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI*2)
+      const up = (p.change_7d_pct || 0) >= 0
+      ctx.fillStyle = up ? 'rgba(63,182,139,0.55)' : 'rgba(224,85,107,0.55)'
+      ctx.fill()
+      ctx.strokeStyle = up ? '#3FB68B' : '#E0556B'
+      ctx.lineWidth = 0.8; ctx.stroke()
+    }
+
     // ── Vessels ──
     const positions = []
     for (const v of vessels) {
@@ -91,7 +107,7 @@ function VesselMap({ vessels }) {
       ctx.fill()
     }
     canvasRef.current._positions = positions
-  }, [vessels])
+  }, [vessels, ports])
 
   useEffect(() => { draw() }, [draw, vessels])
 
@@ -186,6 +202,8 @@ function VesselMap({ vessels }) {
 
 export default function SupplyMap() {
   const { data, loading } = useVessels()
+  const { data: pw } = usePortWatch()
+  const ports = pw?.ports?.ports || []
 
   return (
     <div className="panel" style={{ height: '100%' }}>
@@ -215,10 +233,10 @@ export default function SupplyMap() {
               <div style={{ padding: '4px 8px', fontSize: 10, color: 'var(--text-dim)' }}>{data.note}</div>
             )}
             <div style={{ flex: 1, minHeight: 0 }}>
-              <VesselMap vessels={data.vessels || []} />
+              <VesselMap vessels={data.vessels || []} ports={ports} />
             </div>
             <div style={{ padding: '6px 8px', fontSize: 9, color: 'var(--text-dim)' }}>
-              Blue = underway · gray = stationary · gold = chokepoints. Live AIS via aisstream.io.
+              Blue = underway · gray = stationary · gold = chokepoints · circles = ports (size = activity, green/red = trend). Live AIS via aisstream.io, ports via IMF PortWatch.
             </div>
           </div>
         )}

@@ -31,6 +31,7 @@ import AltData          from './components/AltData/AltData'
 import { SymbolProvider, useSymbol } from './hooks/useSymbol'
 import Events           from './components/Events/Events'
 import SupplyMap       from './components/SupplyMap/SupplyMap'
+import PortWatch       from './components/SupplyMap/PortWatch'
 
 // ── Top bar clock ────────────────────────────────────────────────
 function Clock() {
@@ -246,8 +247,14 @@ function AltDataLayout() {
 
 function SupplyLayout() {
   return (
-    <div style={{ height: '100%' }}>
-      <SupplyMap />
+    <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 6,
+                  height: '100%', minHeight: 0 }}>
+      <div style={{ minHeight: 0 }}>
+        <SupplyMap />
+      </div>
+      <div style={{ minHeight: 0 }}>
+        <PortWatch />
+      </div>
     </div>
   )
 }
