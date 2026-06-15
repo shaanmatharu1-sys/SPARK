@@ -264,3 +264,8 @@ export function useVessels() {
 export function useCompanyTies(symbol) {
   return useFetch(symbol ? `/ties?symbol=${symbol}` : null, null)
 }
+
+// ── International markets ──
+export function useInternational() {
+  return useFetch('/international/all', 60_000)
+}

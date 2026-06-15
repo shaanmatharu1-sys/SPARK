@@ -48,7 +48,9 @@ async def _get(session: aiohttp.ClientSession, path: str, params: dict = {}) -> 
 
 async def fetch_snapshot(symbols: list[str]) -> dict:
     """Get real-time snapshots for a list of tickers (REST fallback)."""
-    cached = await cache_get("snapshot:batch")
+    import hashlib
+    key = "snapshot:" + hashlib.md5(",".join(sorted(symbols)).encode()).hexdigest()[:12]
+    cached = await cache_get(key)
     if cached:
         return cached
     tickers = ",".join(symbols)
@@ -56,7 +58,25 @@ async def fetch_snapshot(symbols: list[str]) -> dict:
         data = await _get(session, f"/v2/snapshot/locale/us/markets/stocks/tickers", {"tickers": tickers})
     if data and "tickers" in data:
         result = {t["ticker"]: t for t in data["tickers"]}
-        await cache_set("snapshot:batch", result, TTL_QUOTE)
+        await cache_set(key, result, TTL_QUOTE)
+        return result
+    return {}
+
+
+async def fetch_fx_snapshot(symbols: list[str]) -> dict:
+    """Get FX snapshots (Polygon forex endpoint). Symbols like 'C:EURUSD'."""
+    import hashlib
+    key = "fxsnap:" + hashlib.md5(",".join(sorted(symbols)).encode()).hexdigest()[:12]
+    cached = await cache_get(key)
+    if cached:
+        return cached
+    tickers = ",".join(symbols)
+    async with aiohttp.ClientSession() as session:
+        data = await _get(session, "/v2/snapshot/locale/global/markets/forex/tickers",
+                          {"tickers": tickers})
+    if data and "tickers" in data:
+        result = {t["ticker"]: t for t in data["tickers"]}
+        await cache_set(key, result, TTL_QUOTE)
         return result
     return {}
 

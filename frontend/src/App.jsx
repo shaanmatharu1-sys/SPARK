@@ -26,6 +26,7 @@ import OptionsResearch from './components/OptionsResearch/OptionsResearch'
 import Portfolio       from './components/Portfolio/Portfolio'
 import Network         from './components/Network/Network'
 import Ties            from './components/Ties/Ties'
+import International    from './components/International/International'
 import SupplyMap       from './components/SupplyMap/SupplyMap'
 
 // ── Top bar clock ────────────────────────────────────────────────
@@ -65,6 +66,7 @@ const TABS = [
   { id: 'quant',     label: 'QUANT' },
   { id: 'research',  label: 'RESEARCH' },
   { id: 'markets',   label: 'MARKETS' },
+  { id: 'world',     label: 'WORLD' },
   { id: 'whales',    label: 'WHALES' },
   { id: 'network',   label: 'NETWORK' },
   { id: 'ties',      label: 'TIES' },
@@ -213,6 +215,14 @@ function TiesLayout() {
   )
 }
 
+function WorldLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <International />
+    </div>
+  )
+}
+
 function SupplyLayout() {
   return (
     <div style={{ height: '100%' }}>
@@ -352,6 +362,7 @@ export default function App() {
         {activeTab === 'quant'    && <QuantLayout />}
         {activeTab === 'research' && <ResearchLayout />}
         {activeTab === 'markets'  && <MarketsLayout />}
+        {activeTab === 'world'    && <WorldLayout />}
         {activeTab === 'whales'   && <WhalesLayout />}
         {activeTab === 'network'  && <NetworkLayout />}
         {activeTab === 'ties'     && <TiesLayout />}
