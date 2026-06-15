@@ -179,7 +179,7 @@ export default function App() {
             letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: 7,
           }}>
             <span style={{ fontSize: 14, opacity: 0.8 }}>◆</span>
-            Meridian
+            SPARK
           </span>
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 3 }}>
