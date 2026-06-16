@@ -17,7 +17,7 @@ async def get_redis() -> aioredis.Redis:
             REDIS_URL,
             encoding="utf-8",
             decode_responses=True,
-            max_connections=50,
+            max_connections=80,
             socket_timeout=30,             # don't block forever on a read
             socket_connect_timeout=10,
             socket_keepalive=True,         # detect dead connections
@@ -30,14 +30,22 @@ async def get_redis() -> aioredis.Redis:
 # ── Helpers ─────────────────────────────────────────────────────
 
 async def cache_set(key: str, value: dict | list, ttl: int = 60):
-    r = await get_redis()
-    await r.setex(key, ttl, json.dumps(value))
+    try:
+        r = await get_redis()
+        await r.setex(key, ttl, json.dumps(value))
+    except Exception:
+        # cache write failures must never break the request path
+        pass
 
 
 async def cache_get(key: str) -> dict | list | None:
-    r = await get_redis()
-    raw = await r.get(key)
-    return json.loads(raw) if raw else None
+    try:
+        r = await get_redis()
+        raw = await r.get(key)
+        return json.loads(raw) if raw else None
+    except Exception:
+        # treat any cache read failure as a miss; caller will fetch live data
+        return None
 
 
 async def cache_delete(key: str):
@@ -50,43 +58,86 @@ async def publish(channel: str, message: dict):
     await r.publish(channel, json.dumps(message))
 
 
-async def subscribe(channel: str):
-    """
-    Async generator yielding messages from a Redis pub/sub channel.
-    Uses get_message with a timeout (rather than the indefinitely-blocking
-    listen()) so a slow/dead Redis read can't hang the connection forever,
-    and so client disconnects tear down cleanly without leaking connections.
-    """
+# ── Shared pub/sub fan-out ───────────────────────────────────────
+# Instead of one Redis pub/sub connection PER WebSocket client (which exhausts
+# the connection pool under many clients / reconnect storms), we maintain ONE
+# Redis pub/sub connection per channel and fan messages out to all subscribed
+# clients via in-process asyncio queues. N clients = 1 Redis connection.
+
+_channel_subscribers: dict[str, set] = {}   # channel -> set[asyncio.Queue]
+_channel_listeners: dict[str, asyncio.Task] = {}  # channel -> background task
+_channel_lock = asyncio.Lock()
+
+
+async def _channel_listener(channel: str):
+    """Single background task per channel: reads Redis pub/sub, fans out to queues."""
     r = await get_redis()
     pubsub = r.pubsub()
     await pubsub.subscribe(channel)
     try:
         while True:
+            # stop if no subscribers remain
+            if not _channel_subscribers.get(channel):
+                break
             try:
-                msg = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=5.0
-                )
+                msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
             except (asyncio.TimeoutError, ConnectionError):
-                # transient: yield nothing, loop continues (keeps WS alive)
                 await asyncio.sleep(0.5)
+                continue
+            except Exception:
+                await asyncio.sleep(1.0)
                 continue
             if msg and msg.get("type") == "message":
                 try:
-                    yield json.loads(msg["data"])
+                    data = json.loads(msg["data"])
                 except (json.JSONDecodeError, TypeError):
                     continue
+                # fan out to all subscriber queues (non-blocking)
+                for q in list(_channel_subscribers.get(channel, [])):
+                    try:
+                        q.put_nowait(data)
+                    except asyncio.QueueFull:
+                        pass  # slow client; drop rather than block everyone
             else:
-                # no message this cycle; yield control
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.02)
     finally:
         try:
             await pubsub.unsubscribe(channel)
-            # redis>=5 uses aclose(); older uses close()
             closer = getattr(pubsub, "aclose", None) or getattr(pubsub, "close", None)
             if closer:
                 await closer()
         except Exception:
             pass
+        _channel_listeners.pop(channel, None)
+
+
+async def subscribe(channel: str):
+    """
+    Async generator yielding messages for a WS client. Registers an in-process
+    queue with the shared channel listener — does NOT open its own Redis
+    connection. This keeps Redis usage flat regardless of client count.
+    """
+    q: asyncio.Queue = asyncio.Queue(maxsize=100)
+    async with _channel_lock:
+        _channel_subscribers.setdefault(channel, set()).add(q)
+        # start the shared listener for this channel if not already running
+        if channel not in _channel_listeners or _channel_listeners[channel].done():
+            _channel_listeners[channel] = asyncio.create_task(_channel_listener(channel))
+    try:
+        while True:
+            try:
+                data = await asyncio.wait_for(q.get(), timeout=30.0)
+            except asyncio.TimeoutError:
+                # keep the generator alive; lets the WS detect disconnects
+                continue
+            yield data
+    finally:
+        async with _channel_lock:
+            subs = _channel_subscribers.get(channel)
+            if subs:
+                subs.discard(q)
+                if not subs:
+                    _channel_subscribers.pop(channel, None)
 
 
 async def hset_quote(symbol: str, data: dict):

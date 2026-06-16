@@ -10,7 +10,7 @@ import { WS_BASE } from '../config'
 export function useWebSocket(path, onMessage, enabled = true) {
   const wsRef       = useRef(null)
   const reconnTimer = useRef(null)
-  const backoff     = useRef(1000)
+  const backoff     = useRef(2000)
   const onMessageRef = useRef(onMessage)
   const [status, setStatus] = useState('disconnected') // connected | disconnected | error
 
@@ -25,7 +25,7 @@ export function useWebSocket(path, onMessage, enabled = true) {
 
       ws.onopen = () => {
         setStatus('connected')
-        backoff.current = 1000
+        backoff.current = 2000
       }
 
       ws.onmessage = (e) => {
@@ -40,8 +40,10 @@ export function useWebSocket(path, onMessage, enabled = true) {
       ws.onclose = () => {
         setStatus('disconnected')
         if (enabled) {
+          // increment backoff BEFORE scheduling, so rapid failures back off
+          // immediately rather than hammering at the floor delay
+          backoff.current = Math.min(backoff.current * 1.7, 30000)
           reconnTimer.current = setTimeout(() => {
-            backoff.current = Math.min(backoff.current * 1.5, 30000)
             connect()
           }, backoff.current)
         }

@@ -282,3 +282,22 @@ export function useEvents() {
 export function usePortWatch() {
   return useFetch('/markets/portwatch', 3600_000)  // 1h (weekly data)
 }
+
+// ── Backtest, BYO-algo, arbitrage ──
+export function useIndicators() {
+  return useFetch('/quant/indicators', null)
+}
+export function useETFArb() {
+  return useFetch('/research/arbitrage/etf', 30_000)
+}
+export async function runCustomBacktest(symbol, entry, exit, days = 730, costBps = 1.0) {
+  const r = await fetch(`${API}/quant/backtest/${symbol}/custom?days=${days}&cost_bps=${costBps}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entry, exit }),
+  })
+  return r.json()
+}
+export async function runPresetBacktest(symbol, strategy, days = 730, costBps = 1.0) {
+  const r = await fetch(`${API}/quant/backtest/${symbol}?strategy=${strategy}&days=${days}&cost_bps=${costBps}`)
+  return r.json()
+}

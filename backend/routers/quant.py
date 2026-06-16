@@ -5,6 +5,8 @@ from fastapi import APIRouter, Query
 from services.polygon_client import fetch_agg_bars
 from analytics.signals.engine import compute_signals
 from analytics.backtest.strategies import run_strategy, STRATEGY_META
+from analytics.backtest.strategies import run_custom, INDICATOR_META
+from fastapi import Body
 import datetime
 
 router = APIRouter(prefix="/quant", tags=["quant"])
@@ -34,6 +36,32 @@ async def get_signals(symbol: str, days: int = Query(default=365)):
 async def list_strategies():
     """GET /quant/strategies — Available backtest strategies and their params."""
     return STRATEGY_META
+
+
+@router.get("/indicators")
+async def list_indicators():
+    """GET /quant/indicators — Indicators available for build-your-own algo."""
+    return INDICATOR_META
+
+
+@router.post("/backtest/{symbol}/custom")
+async def backtest_custom(
+    symbol: str,
+    days:     int = Query(default=730),
+    cost_bps: float = Query(default=1.0),
+    rules: dict = Body(...),
+):
+    """
+    POST /quant/backtest/AAPL/custom — Build-your-own-algo backtest.
+    Body: {"entry": [{indicator, op, value, param}], "exit": [...]}
+    """
+    closes = await _get_closes(symbol, days, "day")
+    if len(closes) < 60:
+        return {"error": "need >= 60 price points", "symbol": symbol, "n": len(closes)}
+    result = run_custom(closes, rules.get("entry", []), rules.get("exit", []),
+                        cost_bps=cost_bps)
+    result["symbol"] = symbol.upper()
+    return result
 
 
 @router.get("/backtest/{symbol}")

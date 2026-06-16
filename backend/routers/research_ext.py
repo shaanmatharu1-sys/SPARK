@@ -79,6 +79,20 @@ async def ties_universe():
                           for s, d in sorted(UNIVERSE.items())]}
 
 
+@router.get("/arbitrage/etf")
+async def arbitrage_etf_scan():
+    """ETF vs underlying-holdings premium/discount scan across covered ETFs."""
+    from analytics.arbitrage.etf_engine import scan_all_etfs
+    return await scan_all_etfs()
+
+
+@router.get("/arbitrage/etf/{etf}")
+async def arbitrage_etf_one(etf: str):
+    """Single ETF premium/discount detail with holdings breakdown."""
+    from analytics.arbitrage.etf_engine import compute_etf_spread
+    return await compute_etf_spread(etf.upper())
+
+
 # ════════════════════════════════════════════════════════════════
 # OPTIONS RESEARCH
 # ════════════════════════════════════════════════════════════════

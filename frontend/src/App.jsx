@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import MarketMonitor  from './components/MarketMonitor/MarketMonitor'
 import PriceChart     from './components/Charts/PriceChart'
 import MacroDashboard from './components/MacroDashboard/MacroDashboard'
+import MacroExpanded from './components/MacroDashboard/MacroExpanded'
 import YieldCurve     from './components/YieldCurve/YieldCurve'
 import FearGreed      from './components/FearGreed/FearGreed'
 import SectorHeatmap  from './components/SectorHeatmap/SectorHeatmap'
@@ -28,6 +29,8 @@ import Network         from './components/Network/Network'
 import Ties            from './components/Ties/Ties'
 import International    from './components/International/International'
 import AltData          from './components/AltData/AltData'
+import BacktestTab      from './components/Backtest/BacktestTab'
+import Arbitrage        from './components/Arbitrage/Arbitrage'
 import { SymbolProvider, useSymbol } from './hooks/useSymbol'
 import Events           from './components/Events/Events'
 import SupplyMap       from './components/SupplyMap/SupplyMap'
@@ -76,6 +79,8 @@ const TABS = [
   { id: 'whales',    label: 'WHALES' },
   { id: 'network',   label: 'NETWORK' },
   { id: 'ties',      label: 'TIES' },
+  { id: 'backtest',  label: 'BACKTEST' },
+  { id: 'arb',       label: 'ARB' },
   { id: 'supply',    label: 'SUPPLY' },
   { id: 'algo',      label: 'ALGO' },
   { id: 'portfolio', label: 'PORTFOLIO' },
@@ -137,12 +142,14 @@ function MacroLayout() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
+      gridTemplateColumns: '1fr 1fr 1fr',
       gap: 4,
       height: '100%',
+      minHeight: 0,
     }}>
-      <MacroDashboard />
-      <YieldCurve />
+      <div style={{ minHeight: 0 }}><MacroDashboard /></div>
+      <div style={{ minHeight: 0 }}><MacroExpanded /></div>
+      <div style={{ minHeight: 0 }}><YieldCurve /></div>
     </div>
   )
 }
@@ -217,6 +224,22 @@ function TiesLayout() {
   return (
     <div style={{ height: '100%' }}>
       <Ties />
+    </div>
+  )
+}
+
+function BacktestLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <BacktestTab />
+    </div>
+  )
+}
+
+function ArbLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <Arbitrage />
     </div>
   )
 }
@@ -414,6 +437,8 @@ function AppInner() {
         {activeTab === 'whales'   && <WhalesLayout />}
         {activeTab === 'network'  && <NetworkLayout />}
         {activeTab === 'ties'     && <TiesLayout />}
+        {activeTab === 'backtest' && <BacktestLayout />}
+        {activeTab === 'arb'      && <ArbLayout />}
         {activeTab === 'supply'   && <SupplyLayout />}
         {activeTab === 'yield'    && <YieldLayout />}
         {activeTab === 'algo'     && <AlgoLayout />}
