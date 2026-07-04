@@ -23,7 +23,15 @@ NEWS_API_KEY     = os.getenv("NEWS_API_KEY", "")
 REDIS_URL        = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 # ── Database (durable per-user data — accounts, watchlists, portfolios) ──
+# Railway (and Heroku-style) Postgres plugins inject a plain "postgresql://"
+# or "postgres://" URL, but create_async_engine() needs an async driver —
+# without it, SQLAlchemy defaults to psycopg2 (sync, not installed) and
+# crashes with ModuleNotFoundError. Force the asyncpg driver here.
 DATABASE_URL     = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 # ── Auth ────────────────────────────────────────────────────────
 JWT_SECRET          = os.getenv("JWT_SECRET", "")
