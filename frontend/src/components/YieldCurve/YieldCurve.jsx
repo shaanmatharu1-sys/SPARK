@@ -34,34 +34,34 @@ export default function YieldCurve() {
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 5, right: 12, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#131820" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis
                 dataKey="maturity"
-                tick={{ fill: '#546e7a', fontSize: 9 }}
-                axisLine={{ stroke: '#1c2333' }}
+                tick={{ fill: 'var(--text-dim)', fontSize: 9 }}
+                axisLine={{ stroke: 'var(--border-bright)' }}
               />
               <YAxis
                 domain={['auto', 'auto']}
-                tick={{ fill: '#546e7a', fontSize: 9 }}
-                axisLine={{ stroke: '#1c2333' }}
+                tick={{ fill: 'var(--text-dim)', fontSize: 9 }}
+                axisLine={{ stroke: 'var(--border-bright)' }}
                 tickFormatter={v => `${v.toFixed(2)}%`}
                 width={45}
               />
               <Tooltip
                 contentStyle={{
-                  background: '#0e1118', border: '1px solid #1c2333',
-                  borderRadius: 4, fontSize: 11, fontFamily: 'Courier New',
+                  background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                  borderRadius: 4, fontSize: 11, fontFamily: 'var(--font-mono)',
                 }}
-                labelStyle={{ color: '#f0a500' }}
+                labelStyle={{ color: 'var(--gold)' }}
                 formatter={(v) => [`${v.toFixed(3)}%`, 'Yield']}
               />
-              <ReferenceLine y={0} stroke="#ff3d5760" strokeDasharray="4 4" />
+              <ReferenceLine y={0} stroke="rgba(224,85,107,0.4)" strokeDasharray="4 4" />
               <Line
                 type="monotone"
                 dataKey="yield"
-                stroke="#1e88e5"
+                stroke="var(--steel-bright)"
                 strokeWidth={2}
-                dot={{ fill: '#1e88e5', r: 3 }}
+                dot={{ fill: 'var(--steel-bright)', r: 3 }}
                 activeDot={{ r: 5 }}
               />
             </LineChart>

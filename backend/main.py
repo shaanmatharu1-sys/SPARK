@@ -18,7 +18,7 @@ from config import CORS_ORIGINS, DEFAULT_WATCHLIST, SECTOR_ETFS
 from cache.redis_client import ping as redis_ping
 
 # ── Routers ──────────────────────────────────────────────────────────────────
-from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata
+from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata, fundamentals
 
 # ── Background WS feeds ──────────────────────────────────────────────────────
 from services.polygon_client import PolygonStocksWS, PolygonOptionsWS
@@ -116,6 +116,11 @@ async def lifespan(app: FastAPI):
     if vessel_client.AISSTREAM_KEY:
         logger.info("[Vessel] AISstream feed starting...")
 
+    # Start flight-tracking poller (OpenSky Network, no key needed)
+    from services import flight_client
+    flight_client.start_poller()
+    logger.info("[Flight] OpenSky poller starting...")
+
     # Start scheduler
     setup_scheduler()
 
@@ -164,6 +169,7 @@ app.include_router(traders.router)
 app.include_router(research_ext.router)
 app.include_router(international.router)
 app.include_router(altdata.router)
+app.include_router(fundamentals.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

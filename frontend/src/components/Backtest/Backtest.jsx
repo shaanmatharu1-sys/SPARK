@@ -6,11 +6,11 @@ import {
 import { useBacktestCompare } from '../../hooks/useMarketData'
 
 const STRAT_COLORS = {
-  zscore_reversion:    '#42a5f5',
-  momentum:            '#00c853',
-  ma_crossover:        '#f0a500',
-  bollinger_reversion: '#7c4dff',
-  buy_hold:            '#7a92ab',
+  zscore_reversion:    'var(--steel-bright)',
+  momentum:            'var(--green)',
+  ma_crossover:        'var(--gold)',
+  bollinger_reversion: 'var(--purple)',
+  buy_hold:            'var(--text-dim)',
 }
 
 function fmtPct(x)  { return x != null ? `${(x * 100).toFixed(1)}%` : '—' }
@@ -64,20 +64,20 @@ export default function Backtest() {
               background: days === d ? 'var(--blue)' : 'transparent',
               color: days === d ? '#fff' : 'var(--text-secondary)',
               border: '1px solid var(--border-accent)', borderRadius: 3,
-              padding: '2px 6px', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New',
+              padding: '2px 6px', fontSize: 9, cursor: 'pointer', fontFamily: 'var(--font-mono)',
             }}>{d === 365 ? '1Y' : d === 730 ? '2Y' : '3Y'}</button>
           ))}
           <span className="dim" style={{ fontSize: 9, marginLeft: 4 }}>COST:</span>
           <input value={costBps} onChange={e => setCostBps(parseFloat(e.target.value) || 0)}
-            style={{ background: '#0a0c10', border: '1px solid var(--border-accent)',
+            style={{ background: 'var(--bg-base)', border: '1px solid var(--border-accent)',
                      color: 'var(--text-primary)', padding: '2px 4px', fontSize: 9,
-                     borderRadius: 3, width: 32, fontFamily: 'Courier New' }} />
+                     borderRadius: 3, width: 32, fontFamily: 'var(--font-mono)' }} />
           <span className="dim" style={{ fontSize: 9 }}>bps</span>
           <input value={input} onChange={e => setInput(e.target.value.toUpperCase())}
             onKeyDown={e => e.key === 'Enter' && setSymbol(input)}
-            style={{ background: '#0a0c10', border: '1px solid var(--border-accent)',
+            style={{ background: 'var(--bg-base)', border: '1px solid var(--border-accent)',
                      color: 'var(--yellow)', padding: '2px 6px', fontSize: 10,
-                     borderRadius: 3, width: 64, fontFamily: 'Courier New', fontWeight: 'bold' }} />
+                     borderRadius: 3, width: 64, fontFamily: 'var(--font-mono)', fontWeight: 'bold' }} />
         </div>
       </div>
 
@@ -92,20 +92,20 @@ export default function Backtest() {
             <div style={{ height: 260, padding: '8px 8px 0 0' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#131820" />
-                  <XAxis dataKey="idx" tick={{ fill: '#546e7a', fontSize: 9 }}
-                         axisLine={{ stroke: '#1c2333' }} />
-                  <YAxis tick={{ fill: '#546e7a', fontSize: 9 }} axisLine={{ stroke: '#1c2333' }}
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="idx" tick={{ fill: 'var(--text-dim)', fontSize: 9 }}
+                         axisLine={{ stroke: 'var(--border-bright)' }} />
+                  <YAxis tick={{ fill: 'var(--text-dim)', fontSize: 9 }} axisLine={{ stroke: 'var(--border-bright)' }}
                          tickFormatter={v => `${v.toFixed(2)}x`} width={42}
                          domain={['auto', 'auto']} />
-                  <Tooltip contentStyle={{ background: '#0e1118', border: '1px solid #1c2333',
-                           borderRadius: 4, fontSize: 10, fontFamily: 'Courier New' }}
+                  <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                           borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }}
                            formatter={(v) => `${v.toFixed(3)}x`} />
                   <Legend wrapperStyle={{ fontSize: 9 }} />
                   {strategies.map(s => (
                     <Line key={s} type="monotone" dataKey={s}
                           name={data.results[s].name}
-                          stroke={STRAT_COLORS[s] || '#888'}
+                          stroke={STRAT_COLORS[s] || 'var(--text-dim)'}
                           strokeWidth={s === 'buy_hold' ? 1.5 : 1.5}
                           strokeDasharray={s === 'buy_hold' ? '4 4' : '0'}
                           dot={false} />

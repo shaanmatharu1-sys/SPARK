@@ -17,9 +17,9 @@ export default function NewsFeed() {
             onKeyDown={e => e.key === 'Enter' && setSubmitted(query || null)}
             placeholder="search..."
             style={{
-              background: '#0a0c10', border: '1px solid var(--border-accent)',
+              background: 'var(--bg-base)', border: '1px solid var(--border-accent)',
               color: 'var(--text-primary)', padding: '2px 6px',
-              fontSize: 9, borderRadius: 3, fontFamily: 'Courier New', width: 80,
+              fontSize: 9, borderRadius: 3, fontFamily: 'var(--font-mono)', width: 80,
             }}
           />
         </div>
@@ -31,7 +31,7 @@ export default function NewsFeed() {
           (articles || []).map((a, i) => (
             <div key={i} style={{
               padding: '7px 10px',
-              borderBottom: '1px solid #0f151e',
+              borderBottom: '1px solid var(--border)',
             }}>
               <a
                 href={a.url}

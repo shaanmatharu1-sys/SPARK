@@ -3,13 +3,13 @@ import { useUnusualActivity } from '../../hooks/useMarketData'
 
 function Flag({ label }) {
   const colors = {
-    CALL:          { bg: '#1a4a2e', color: '#00c853' },
-    PUT:           { bg: '#4a1a1f', color: '#ff3d57' },
-    HIGH_VOL_OI:   { bg: '#1a1a4a', color: '#7c4dff' },
-    ITM:           { bg: '#1a3a1a', color: '#69f0ae' },
-    OTM:           { bg: '#2a2010', color: '#ffd54f' },
+    CALL:          { bg: 'var(--green-dim)', color: 'var(--green)' },
+    PUT:           { bg: 'var(--red-dim)', color: 'var(--red)' },
+    HIGH_VOL_OI:   { bg: 'rgba(155,139,212,0.18)', color: 'var(--purple)' },
+    ITM:           { bg: 'var(--green-dim)', color: 'var(--green)' },
+    OTM:           { bg: 'rgba(201,168,76,0.18)', color: 'var(--gold-bright)' },
   }
-  const style = colors[label] || { bg: '#1c2333', color: '#c8d6e5' }
+  const style = colors[label] || { bg: 'var(--bg-raised)', color: 'var(--text-secondary)' }
   return (
     <span style={{
       background: style.bg, color: style.color,
@@ -37,9 +37,9 @@ export default function UnusualActivity() {
             onKeyDown={e => e.key === 'Enter' && setFilter(symbol || null)}
             placeholder="TICKER..."
             style={{
-              background: '#0a0c10', border: '1px solid var(--border-accent)',
+              background: 'var(--bg-base)', border: '1px solid var(--border-accent)',
               color: 'var(--yellow)', padding: '2px 6px',
-              fontSize: 9, borderRadius: 3, fontFamily: 'Courier New', width: 70,
+              fontSize: 9, borderRadius: 3, fontFamily: 'var(--font-mono)', width: 70,
             }}
           />
         </div>

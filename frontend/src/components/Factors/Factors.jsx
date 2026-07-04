@@ -9,16 +9,18 @@ const FACTOR_LABELS = {
   vol_adj_mom: 'VAM',
 }
 
-// Heatmap color for a z-score value (-2..+2 -> red..green)
+// Heatmap color for a z-score value (-2..+2 -> red..green), built from the
+// theme's --green (63,182,139) / --red (224,85,107) at varying alpha —
+// same technique as SectorHeatmap's heat-cell scale.
 function zColor(z) {
   if (z == null) return 'transparent'
   const clamped = Math.max(-2, Math.min(2, z))
   if (clamped >= 0) {
     const a = clamped / 2
-    return `rgba(0, 200, 83, ${0.12 + a * 0.45})`
+    return `rgba(63, 182, 139, ${0.12 + a * 0.45})`
   } else {
     const a = -clamped / 2
-    return `rgba(255, 61, 87, ${0.12 + a * 0.45})`
+    return `rgba(224, 85, 107, ${0.12 + a * 0.45})`
   }
 }
 
@@ -45,7 +47,7 @@ export default function Factors() {
               background: universe === u ? 'var(--blue)' : 'transparent',
               color: universe === u ? '#fff' : 'var(--text-secondary)',
               border: '1px solid var(--border-accent)', borderRadius: 3,
-              padding: '2px 8px', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New',
+              padding: '2px 8px', fontSize: 9, cursor: 'pointer', fontFamily: 'var(--font-mono)',
             }}>{u.toUpperCase()}</button>
           ))}
         </div>

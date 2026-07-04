@@ -3,7 +3,9 @@ routers/quotes.py — Real-time quote endpoints + WebSocket stream
 """
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from websocket.manager import manager
-from services.polygon_client import fetch_snapshot, fetch_agg_bars, fetch_ticker_details
+from services.polygon_client import (
+    fetch_snapshot, fetch_agg_bars, fetch_ticker_details, fetch_dividends, fetch_splits,
+)
 from cache.redis_client import hget_quote, subscribe
 import asyncio
 
@@ -46,6 +48,18 @@ async def get_bars(
 @router.get("/{symbol}/details")
 async def get_details(symbol: str):
     return await fetch_ticker_details(symbol.upper())
+
+
+@router.get("/{symbol}/dividends")
+async def get_dividends(symbol: str):
+    """GET /quotes/AAPL/dividends — Cash dividend history."""
+    return await fetch_dividends(symbol.upper())
+
+
+@router.get("/{symbol}/splits")
+async def get_splits(symbol: str):
+    """GET /quotes/AAPL/splits — Stock split history."""
+    return await fetch_splits(symbol.upper())
 
 
 @router.websocket("/ws")

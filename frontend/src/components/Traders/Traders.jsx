@@ -1,6 +1,20 @@
 import React, { useState } from 'react'
 import { useInsider, useCongress, useFunds, use13F } from '../../hooks/useMarketData'
 
+function fmtShares(n) {
+  if (n === null || n === undefined) return '—'
+  return n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+}
+
+function fmtUsd(n) {
+  if (n === null || n === undefined) return '—'
+  const abs = Math.abs(n)
+  if (abs >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B'
+  if (abs >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M'
+  if (abs >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K'
+  return '$' + n.toFixed(2)
+}
+
 function InsiderView() {
   const [symbol, setSymbol] = useState('AAPL')
   const [input, setInput] = useState('AAPL')
@@ -16,16 +30,29 @@ function InsiderView() {
       {loading ? <div style={{ padding: 12, color: 'var(--text-dim)' }}>Loading insider filings…</div>
        : data?.trades?.length ? (
         <table className="bbg-table">
-          <thead><tr><th>FORM</th><th>FILED</th><th>LINK</th></tr></thead>
+          <thead><tr>
+            <th>NAME</th><th>ROLE</th><th>DATE</th><th>TYPE</th>
+            <th>SHARES</th><th>PRICE</th><th>VALUE</th><th>LINK</th>
+          </tr></thead>
           <tbody>
-            {data.trades.map((t, i) => (
-              <tr key={i}>
-                <td style={{ color: 'var(--gold)' }}>Form {t.form}</td>
-                <td>{t.filing_date}</td>
-                <td><a href={t.url} target="_blank" rel="noreferrer"
-                       style={{ color: 'var(--steel-bright)' }}>view</a></td>
-              </tr>
-            ))}
+            {data.trades.map((t, i) => {
+              const isBuy = t.acquired_disposed === 'A'
+              return (
+                <tr key={i}>
+                  <td style={{ fontSize: 10 }}>{t.name}{t.derivative ? ' (deriv.)' : ''}</td>
+                  <td className="dim" style={{ fontSize: 10 }}>{t.relationship}</td>
+                  <td className="dim" style={{ fontSize: 10 }}>{t.date}</td>
+                  <td style={{ color: isBuy ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
+                    {t.code_label || t.code}
+                  </td>
+                  <td>{fmtShares(t.shares)}</td>
+                  <td>{t.price != null ? t.price.toFixed(2) : '—'}</td>
+                  <td style={{ color: 'var(--gold)' }}>{fmtUsd(t.value)}</td>
+                  <td><a href={t.url} target="_blank" rel="noreferrer"
+                         style={{ color: 'var(--steel-bright)' }}>src</a></td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       ) : <div style={{ padding: 12, color: 'var(--text-dim)', fontSize: 11 }}>
@@ -91,8 +118,29 @@ function FundsView() {
        : data?.filings?.length ? (
         <>
           <div style={{ padding: '4px 12px', color: 'var(--gold)', fontWeight: 600 }}>{data.fund}</div>
+          {data.holdings?.length ? (
+            <table className="bbg-table">
+              <thead><tr><th>ISSUER</th><th>CLASS</th><th>CUSIP</th><th>SHARES</th><th>VALUE</th></tr></thead>
+              <tbody>
+                {data.holdings.map((h, i) => (
+                  <tr key={i}>
+                    <td style={{ fontSize: 10 }}>{h.issuer}</td>
+                    <td className="dim" style={{ fontSize: 10 }}>{h.class}</td>
+                    <td className="dim" style={{ fontSize: 10 }}>{h.cusip}</td>
+                    <td>{fmtShares(h.shares)}</td>
+                    <td style={{ color: 'var(--gold)' }}>{fmtUsd(h.value_usd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : <div style={{ padding: 12, color: 'var(--text-dim)', fontSize: 11 }}>
+                {data.holdings_note || 'No holdings could be parsed for the latest filing.'}
+              </div>}
+          {data.holdings_note && <div style={{ padding: '4px 12px', fontSize: 9, color: 'var(--text-dim)',
+                                       fontStyle: 'italic' }}>{data.holdings_note}</div>}
+          <div style={{ padding: '8px 12px 2px', color: 'var(--text-dim)', fontSize: 10 }}>All filings:</div>
           <table className="bbg-table">
-            <thead><tr><th>FORM</th><th>FILED</th><th>HOLDINGS</th></tr></thead>
+            <thead><tr><th>FORM</th><th>FILED</th><th>LINK</th></tr></thead>
             <tbody>
               {data.filings.map((f, i) => (
                 <tr key={i}>

@@ -1,13 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createChart, ColorType } from 'lightweight-charts'
 import { useBars } from '../../hooks/useMarketData'
+import { useWebSocket } from '../../hooks/useWebSocket'
 
 const TIMESPANS = [
-  { label: '1D',  multiplier: 1,  timespan: 'minute' },
-  { label: '1W',  multiplier: 5,  timespan: 'minute' },
-  { label: '1M',  multiplier: 1,  timespan: 'day' },
-  { label: '3M',  multiplier: 1,  timespan: 'day' },
-  { label: '1Y',  multiplier: 1,  timespan: 'week' },
+  { label: '1D',  multiplier: 1,  timespan: 'minute', limit: 390 },
+  { label: '1W',  multiplier: 5,  timespan: 'minute', limit: 390 },
+  { label: '1M',  multiplier: 1,  timespan: 'day',    limit: 30 },
+  { label: '3M',  multiplier: 1,  timespan: 'day',    limit: 65 },
+  { label: '1Y',  multiplier: 1,  timespan: 'week',   limit: 52 },
 ]
 
 export default function PriceChart({ symbol = 'SPY' }) {
@@ -15,26 +16,53 @@ export default function PriceChart({ symbol = 'SPY' }) {
   const chartRef     = useRef(null)
   const candleRef    = useRef(null)
   const volumeRef    = useRef(null)
+  const lastBarTime  = useRef(null)
 
   const [ts, setTs] = useState(TIMESPANS[0])
-  const { data: bars, loading } = useBars(symbol, ts.multiplier, ts.timespan)
+  const { data: bars, loading } = useBars(symbol, ts.multiplier, ts.timespan, ts.limit)
+
+  // Live tick updates only make sense for the 1-minute intraday view — the websocket's
+  // "AM" events are always 1-minute bars, so applying them to a 5m/day/week series
+  // would draw a spurious extra candle instead of updating the right bucket.
+  const isIntraday = ts.timespan === 'minute' && ts.multiplier === 1
+
+  const onTick = useCallback((msg) => {
+    if (msg.type !== 'bar' || msg.symbol !== symbol) return
+    if (!candleRef.current || !volumeRef.current) return
+    const time = Math.floor(msg.ts / 1000)
+    if (lastBarTime.current != null && time < lastBarTime.current) return
+    lastBarTime.current = time
+    candleRef.current.update({
+      time, open: msg.open, high: msg.high, low: msg.low, close: msg.close,
+    })
+    volumeRef.current.update({
+      time, value: msg.volume,
+      // mirrors var(--green)/var(--red) at ~19% alpha — lightweight-charts can't read CSS vars
+      color: msg.close >= msg.open ? '#3FB68B30' : '#E0556B30',
+    })
+  }, [symbol])
+
+  useWebSocket(isIntraday ? `/quotes/ws?symbols=${symbol}` : null, onTick, isIntraday)
 
   // Init chart
   useEffect(() => {
     if (!containerRef.current) return
+    // lightweight-charts draws to its own internal canvas and can't read CSS custom
+    // properties, so these hex values are hardcoded to mirror the theme tokens noted
+    // alongside each one (var(--bg-panel), var(--text-dim), var(--border), etc).
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0e1118' },
-        textColor:  '#7a92ab',
+        background: { type: ColorType.Solid, color: '#0F2138' }, // var(--bg-panel)
+        textColor:  '#5E789A', // var(--text-dim)
       },
       grid: {
-        vertLines:  { color: '#131820' },
-        horzLines:  { color: '#131820' },
+        vertLines:  { color: '#1A3354' }, // var(--border)
+        horzLines:  { color: '#1A3354' }, // var(--border)
       },
       crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: '#1c2333' },
+      rightPriceScale: { borderColor: '#244873' }, // var(--border-bright)
       timeScale: {
-        borderColor:     '#1c2333',
+        borderColor:     '#244873', // var(--border-bright)
         timeVisible:     true,
         secondsVisible:  false,
       },
@@ -43,16 +71,16 @@ export default function PriceChart({ symbol = 'SPY' }) {
     })
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor:          '#00c853',
-      downColor:        '#ff3d57',
-      borderUpColor:    '#00c853',
-      borderDownColor:  '#ff3d57',
-      wickUpColor:      '#00c853',
-      wickDownColor:    '#ff3d57',
+      upColor:          '#3FB68B', // var(--green)
+      downColor:        '#E0556B', // var(--red)
+      borderUpColor:    '#3FB68B', // var(--green)
+      borderDownColor:  '#E0556B', // var(--red)
+      wickUpColor:      '#3FB68B', // var(--green)
+      wickDownColor:    '#E0556B', // var(--red)
     })
 
     const volumeSeries = chart.addHistogramSeries({
-      color:     '#1e88e5',
+      color:     '#6BA3D4', // var(--steel-bright)
       priceFormat: { type: 'volume' },
       priceScaleId: 'volume',
       scaleMargins: { top: 0.8, bottom: 0 },
@@ -92,11 +120,13 @@ export default function PriceChart({ symbol = 'SPY' }) {
     const volumes = bars.map(b => ({
       time:  b.t / 1000,
       value: b.v,
-      color: b.c >= b.o ? '#00c85330' : '#ff3d5730',
+      // mirrors var(--green)/var(--red) at ~19% alpha — lightweight-charts can't read CSS vars
+      color: b.c >= b.o ? '#3FB68B30' : '#E0556B30',
     }))
     candleRef.current.setData(candles)
     volumeRef.current.setData(volumes)
     chartRef.current?.timeScale().fitContent()
+    lastBarTime.current = candles.length ? candles[candles.length - 1].time : null
   }, [bars])
 
   return (

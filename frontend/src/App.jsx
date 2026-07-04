@@ -32,6 +32,7 @@ import AltData          from './components/AltData/AltData'
 import BacktestTab      from './components/Backtest/BacktestTab'
 import Arbitrage        from './components/Arbitrage/Arbitrage'
 import { SymbolProvider, useSymbol } from './hooks/useSymbol'
+import { useWatchlist } from './hooks/useMarketData'
 import Events           from './components/Events/Events'
 import SupplyMap       from './components/SupplyMap/SupplyMap'
 import PortWatch       from './components/SupplyMap/PortWatch'
@@ -91,7 +92,7 @@ const TABS = [
 ]
 
 // ── Layout for each tab ──────────────────────────────────────────
-function OverviewLayout({ chartSymbol }) {
+function OverviewLayout({ chartSymbol, watchlistSymbols }) {
   const cell = { minHeight: 0, minWidth: 0, overflow: 'hidden' }
   return (
     <div style={{
@@ -107,7 +108,7 @@ function OverviewLayout({ chartSymbol }) {
         <PriceChart symbol={chartSymbol} />
       </div>
       <div style={{ ...cell, gridColumn: '2', gridRow: '1' }}>
-        <MarketMonitor />
+        <MarketMonitor symbols={watchlistSymbols} />
       </div>
       <div style={{ ...cell, gridColumn: '3', gridRow: '1' }}>
         <FearGreed />
@@ -328,6 +329,7 @@ function AppInner() {
   const [symbolInput,  setSymbolInput]  = useState(chartSymbol)
   useEffect(() => { setSymbolInput(chartSymbol) }, [chartSymbol])
   const [showWatchlist, setShowWatchlist] = useState(false)
+  const { data: watchlistData, refresh: refreshWatchlist } = useWatchlist()
 
   return (
     <div style={{
@@ -415,7 +417,7 @@ function AppInner() {
             style={{ width: 70 }}
           />
           {showWatchlist && (
-            <WatchlistManager onClose={() => setShowWatchlist(false)} />
+            <WatchlistManager onClose={() => setShowWatchlist(false)} onChange={refreshWatchlist} />
           )}
         </div>
 
@@ -426,7 +428,7 @@ function AppInner() {
 
       {/* ── Main Content ─────────────────────────────────────────── */}
       <div style={{ flex: 1, padding: 4, overflow: 'hidden', minHeight: 0 }}>
-        {activeTab === 'overview' && <OverviewLayout chartSymbol={chartSymbol} />}
+        {activeTab === 'overview' && <OverviewLayout chartSymbol={chartSymbol} watchlistSymbols={watchlistData?.symbols} />}
         {activeTab === 'options'  && <OptionsLayout />}
         {activeTab === 'quant'    && <QuantLayout />}
         {activeTab === 'research' && <ResearchLayout />}

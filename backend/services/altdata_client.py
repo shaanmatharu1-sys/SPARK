@@ -121,32 +121,35 @@ async def fetch_social_volume(symbols: list[str]):
         return cached
 
     import aiohttp
-    rows = []
+
+    async def one(session, sym):
+        try:
+            url = f"https://api.stocktwits.com/api/2/streams/symbol/{sym}.json"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=8),
+                                   headers={"User-Agent": "Mozilla/5.0"}) as r:
+                if r.status != 200:
+                    return None
+                data = await r.json()
+                msgs = data.get("messages", [])
+                bull = bear = 0
+                for m in msgs:
+                    s = (m.get("entities", {}) or {}).get("sentiment") or {}
+                    b = s.get("basic")
+                    if b == "Bullish": bull += 1
+                    elif b == "Bearish": bear += 1
+                total_sent = bull + bear
+                return {
+                    "symbol": sym,
+                    "volume": len(msgs),
+                    "bullish": bull, "bearish": bear,
+                    "sentiment": round((bull - bear) / total_sent, 2) if total_sent else None,
+                }
+        except Exception:
+            return None
+
     async with aiohttp.ClientSession() as session:
-        for sym in symbols[:12]:
-            try:
-                url = f"https://api.stocktwits.com/api/2/streams/symbol/{sym}.json"
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=8),
-                                       headers={"User-Agent": "Mozilla/5.0"}) as r:
-                    if r.status != 200:
-                        continue
-                    data = await r.json()
-                    msgs = data.get("messages", [])
-                    bull = bear = 0
-                    for m in msgs:
-                        s = (m.get("entities", {}) or {}).get("sentiment") or {}
-                        b = s.get("basic")
-                        if b == "Bullish": bull += 1
-                        elif b == "Bearish": bear += 1
-                    total_sent = bull + bear
-                    rows.append({
-                        "symbol": sym,
-                        "volume": len(msgs),
-                        "bullish": bull, "bearish": bear,
-                        "sentiment": round((bull - bear) / total_sent, 2) if total_sent else None,
-                    })
-            except Exception:
-                continue
+        results = await asyncio.gather(*[one(session, sym) for sym in symbols[:12]])
+    rows = [r for r in results if r]
     out = {"social": rows, "available": len(rows) > 0,
            "as_of": datetime.datetime.utcnow().isoformat()}
     if rows:

@@ -61,6 +61,13 @@ async def get_vessels(limit: int = Query(default=500)):
     return _gv(limit)
 
 
+@router.get("/flights")
+async def get_flights(limit: int = Query(default=500)):
+    """Live flight positions from OpenSky Network for the supply-routes map."""
+    from services.flight_client import get_flights as _gf
+    return _gf(limit)
+
+
 @router.get("/portwatch")
 async def portwatch_all():
     """IMF PortWatch: chokepoint transit trends + port activity (weekly, official)."""

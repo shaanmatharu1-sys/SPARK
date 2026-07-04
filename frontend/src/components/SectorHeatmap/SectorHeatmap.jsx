@@ -1,14 +1,17 @@
 import React from 'react'
 import { useSectors } from '../../hooks/useMarketData'
 
+// Heat-cell background is a green/red intensity scale derived from the theme's
+// --green (#3FB68B -> 63,182,139) and --red (#E0556B -> 224,85,107) at varying
+// alpha — kept separate from the plain --green/--red used for the text above.
 function heatColor(pct) {
-  if (pct == null) return '#1c2333'
-  if (pct >  3)  return '#00695c'
-  if (pct >  1)  return '#2e7d32'
-  if (pct >  0)  return '#1b5e20'
-  if (pct > -1)  return '#4a1500'
-  if (pct > -3)  return '#7f1800'
-  return '#b71c1c'
+  if (pct == null) return 'var(--bg-raised)'
+  if (pct >  3)  return 'rgba(63,182,139,0.55)'
+  if (pct >  1)  return 'rgba(63,182,139,0.35)'
+  if (pct >  0)  return 'rgba(63,182,139,0.18)'
+  if (pct > -1)  return 'rgba(224,85,107,0.18)'
+  if (pct > -3)  return 'rgba(224,85,107,0.35)'
+  return 'rgba(224,85,107,0.55)'
 }
 
 function textColor(pct) {
@@ -37,7 +40,7 @@ export default function SectorHeatmap() {
             {(sectors || []).map(s => (
               <div key={s.symbol} style={{
                 background:    heatColor(s.pct_change),
-                border:        '1px solid #1c2333',
+                border:        '1px solid var(--border)',
                 borderRadius:  4,
                 padding:       '8px 6px',
                 textAlign:     'center',

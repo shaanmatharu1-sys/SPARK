@@ -16,8 +16,10 @@ function ForceGraph({ data }) {
     if (!data?.nodes?.length) return
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
-    const W = canvas.width = canvas.offsetWidth
-    const H = canvas.height = canvas.offsetHeight
+    // Mutable (not const) so the ResizeObserver below can update them in place —
+    // the physics/draw closures always read the current value.
+    let W = canvas.width = canvas.offsetWidth
+    let H = canvas.height = canvas.offsetHeight
 
     // Initialize node positions in a circle
     const nodes = data.nodes.map((n, i) => {
@@ -27,6 +29,37 @@ function ForceGraph({ data }) {
     })
     const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]))
     const edges = data.edges.map(e => ({ ...e, s: nodeById[e.source], t: nodeById[e.target] }))
+
+    const draw = () => {
+      ctx.clearRect(0, 0, W, H)
+      // Edges
+      for (const e of edges) {
+        ctx.beginPath()
+        ctx.moveTo(e.s.x, e.s.y)
+        ctx.lineTo(e.t.x, e.t.y)
+        const pos = e.weight >= 0
+        ctx.strokeStyle = pos
+          ? `rgba(63,182,139,${0.15 + Math.abs(e.weight)*0.5})`
+          : `rgba(224,85,107,${0.15 + Math.abs(e.weight)*0.5})`
+        ctx.lineWidth = Math.abs(e.weight) * 3
+        ctx.stroke()
+      }
+      // Nodes
+      for (const n of nodes) {
+        const r = 6 + n.degree * 2
+        ctx.beginPath()
+        ctx.arc(n.x, n.y, r, 0, Math.PI*2)
+        ctx.fillStyle = SECTOR_COLORS[n.sector] || SECTOR_COLORS.Unknown
+        ctx.fill()
+        // node outline mirrors var(--bg-base); canvas can't read CSS vars directly
+        ctx.strokeStyle = '#0B1929'; ctx.lineWidth = 2; ctx.stroke()
+        // Label — mirrors var(--text-primary)
+        ctx.fillStyle = '#E8EAED'
+        ctx.font = '600 11px IBM Plex Mono, monospace'
+        ctx.textAlign = 'center'
+        ctx.fillText(n.id, n.x, n.y - r - 4)
+      }
+    }
 
     let raf
     let iterations = 0
@@ -63,34 +96,7 @@ function ForceGraph({ data }) {
         n.y = Math.max(20, Math.min(H-20, n.y))
       }
 
-      // Draw
-      ctx.clearRect(0, 0, W, H)
-      // Edges
-      for (const e of edges) {
-        ctx.beginPath()
-        ctx.moveTo(e.s.x, e.s.y)
-        ctx.lineTo(e.t.x, e.t.y)
-        const pos = e.weight >= 0
-        ctx.strokeStyle = pos
-          ? `rgba(63,182,139,${0.15 + Math.abs(e.weight)*0.5})`
-          : `rgba(224,85,107,${0.15 + Math.abs(e.weight)*0.5})`
-        ctx.lineWidth = Math.abs(e.weight) * 3
-        ctx.stroke()
-      }
-      // Nodes
-      for (const n of nodes) {
-        const r = 6 + n.degree * 2
-        ctx.beginPath()
-        ctx.arc(n.x, n.y, r, 0, Math.PI*2)
-        ctx.fillStyle = SECTOR_COLORS[n.sector] || SECTOR_COLORS.Unknown
-        ctx.fill()
-        ctx.strokeStyle = '#0B1929'; ctx.lineWidth = 2; ctx.stroke()
-        // Label
-        ctx.fillStyle = '#E8EAED'
-        ctx.font = '600 11px IBM Plex Mono, monospace'
-        ctx.textAlign = 'center'
-        ctx.fillText(n.id, n.x, n.y - r - 4)
-      }
+      draw()
 
       iterations++
       if (iterations < 300) raf = requestAnimationFrame(simulate)
@@ -106,7 +112,26 @@ function ForceGraph({ data }) {
                        avg_corr: hit.avg_corr, x: mx, y: my } : null)
     }
     canvas.addEventListener('mousemove', onMove)
-    return () => { cancelAnimationFrame(raf); canvas.removeEventListener('mousemove', onMove) }
+
+    // Without this, resizing the window (or switching tabs and back) leaves the
+    // simulation drawn at whatever size the canvas happened to be on mount —
+    // stretched or clipped relative to its actual container.
+    const ro = new ResizeObserver(() => {
+      const newW = canvas.offsetWidth, newH = canvas.offsetHeight
+      if (!newW || !newH || (newW === W && newH === H)) return
+      const sx = newW / W, sy = newH / H
+      for (const n of nodes) { n.x *= sx; n.y *= sy }
+      W = newW; H = newH
+      canvas.width = W; canvas.height = H
+      draw()
+    })
+    ro.observe(canvas)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      canvas.removeEventListener('mousemove', onMove)
+      ro.disconnect()
+    }
   }, [data])
 
   return (

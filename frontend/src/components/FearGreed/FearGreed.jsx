@@ -3,17 +3,19 @@ import { useFearGreed } from '../../hooks/useMarketData'
 
 function GaugeMeter({ score }) {
   const angle = ((score / 100) * 180) - 90  // -90 to +90 degrees
-  const color = score < 25 ? '#ff3d57'
-              : score < 45 ? '#ff8c00'
-              : score < 55 ? '#f0a500'
-              : score < 75 ? '#7cb342'
-              : '#00c853'
+  // 5-stop fear->greed gradient interpolated between the theme's --red and
+  // --gold and --green anchors (no orange/lime tokens exist in the theme).
+  const color = score < 25 ? 'var(--red)'      // #E0556B — extreme fear
+              : score < 45 ? '#D57E5C'         // red/gold blend — fear
+              : score < 55 ? 'var(--gold)'     // #C9A84C — neutral
+              : score < 75 ? '#84AE6C'         // gold/green blend — greed
+              : 'var(--green)'                 // #3FB68B — extreme greed
 
   return (
     <div style={{ textAlign: 'center', padding: '12px 0' }}>
       <svg viewBox="0 0 120 70" width="160" height="90">
         {/* Arc background */}
-        <path d="M10,65 A55,55 0 0,1 110,65" fill="none" stroke="#1c2333" strokeWidth="8" />
+        <path d="M10,65 A55,55 0 0,1 110,65" fill="none" stroke="var(--border-bright)" strokeWidth="8" />
         {/* Colored arc */}
         <path d="M10,65 A55,55 0 0,1 110,65" fill="none" stroke={color}
               strokeWidth="8" strokeDasharray={`${(score / 100) * 172} 172`} />
@@ -27,7 +29,7 @@ function GaugeMeter({ score }) {
         <circle cx="60" cy="65" r="3" fill={color} />
         {/* Score */}
         <text x="60" y="55" textAnchor="middle" fill={color}
-              fontSize="18" fontWeight="bold" fontFamily="Courier New">
+              fontSize="18" fontWeight="bold" fontFamily="var(--font-mono)">
           {Math.round(score)}
         </text>
       </svg>
@@ -61,7 +63,7 @@ export default function FearGreed() {
             <div style={{ padding: '0 10px' }}>
               {Object.entries(inds).map(([key, val]) => (
                 <div key={key} style={{ display: 'flex', justifyContent: 'space-between',
-                                        padding: '3px 0', borderBottom: '1px solid #0f151e' }}>
+                                        padding: '3px 0', borderBottom: '1px solid var(--border)' }}>
                   <span className="dim" style={{ fontSize: 9, textTransform: 'uppercase' }}>
                     {key.replace(/_/g, ' ')}
                   </span>

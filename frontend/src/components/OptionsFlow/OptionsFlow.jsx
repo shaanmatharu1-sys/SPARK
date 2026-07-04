@@ -31,7 +31,7 @@ export default function OptionsFlow() {
               background: filter === f ? 'var(--blue)' : 'transparent',
               color:       filter === f ? '#fff' : 'var(--text-secondary)',
               border: '1px solid var(--border-accent)', borderRadius: 3,
-              padding: '2px 6px', fontSize: 9, cursor: 'pointer', fontFamily: 'Courier New',
+              padding: '2px 6px', fontSize: 9, cursor: 'pointer', fontFamily: 'var(--font-mono)',
             }}>
               {f.toUpperCase()}
             </button>
@@ -41,9 +41,9 @@ export default function OptionsFlow() {
             onChange={e => setInput(e.target.value.toUpperCase())}
             onKeyDown={e => e.key === 'Enter' && setSymbol(input)}
             style={{
-              background: '#0a0c10', border: '1px solid var(--border-accent)',
+              background: 'var(--bg-base)', border: '1px solid var(--border-accent)',
               color: 'var(--yellow)', padding: '2px 6px', fontSize: 9,
-              borderRadius: 3, fontFamily: 'Courier New', width: 60,
+              borderRadius: 3, fontFamily: 'var(--font-mono)', width: 60,
             }}
           />
         </div>

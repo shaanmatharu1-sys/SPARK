@@ -103,15 +103,18 @@ async def fetch_earnings_calendar(symbols: list[str]):
         return cached
 
     from services.polygon_client import fetch_earnings
-    rows = []
-    for sym in symbols[:20]:
+
+    async def one(sym):
         try:
             e = await fetch_earnings(sym)
             if e and e.get("date"):
-                rows.append({"date": e["date"], "name": f"{sym} earnings",
-                             "symbol": sym, "type": "earnings", "importance": "med"})
+                return {"date": e["date"], "name": f"{sym} earnings",
+                        "symbol": sym, "type": "earnings", "importance": "med"}
         except Exception:
-            continue
+            return None
+
+    results = await asyncio.gather(*[one(sym) for sym in symbols[:20]])
+    rows = [r for r in results if r]
     out = {"earnings": rows, "available": len(rows) > 0,
            "as_of": datetime.datetime.utcnow().isoformat()}
     if rows:

@@ -1,5 +1,16 @@
 import React, { useState } from 'react'
-import { useEarnings, useFilings, useSocial } from '../../hooks/useMarketData'
+import {
+  useEarnings, useFilings, useSocial,
+  useTickerDetails, useShortInterest, useDividends, useSplits, useAnalystRatings,
+} from '../../hooks/useMarketData'
+
+function fmtNum(n) {
+  if (n == null) return '—'
+  if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(2) + 'B'
+  if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + 'M'
+  if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + 'K'
+  return n.toLocaleString()
+}
 
 function Earnings({ symbol }) {
   const { data, loading } = useEarnings(symbol)
@@ -43,6 +54,189 @@ function Filings({ symbol }) {
           <span className="dim" style={{ fontSize: 10 }}>{f.filing_date}</span>
         </div>
       ))}
+    </div>
+  )
+}
+
+function StatTile({ label, value, valueColor }) {
+  return (
+    <div style={{ flex: 1, minWidth: 100, textAlign: 'center', padding: 8, background: 'var(--bg-base)', borderRadius: 5 }}>
+      <div className="dim" style={{ fontSize: 9 }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: valueColor || 'var(--text-primary)' }}>{value}</div>
+    </div>
+  )
+}
+
+function Profile({ symbol }) {
+  const { data, loading } = useTickerDetails(symbol)
+  const { data: short, loading: shortLoading } = useShortInterest(symbol)
+
+  if (loading) return <div style={{ padding: 12, color: 'var(--text-dim)' }}>Loading profile…</div>
+  if (!data || Object.keys(data).length === 0)
+    return <div style={{ padding: 12, color: 'var(--text-dim)', fontSize: 11 }}>No profile data available.</div>
+
+  return (
+    <div style={{ padding: 12 }}>
+      <div style={{ marginBottom: 10 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--gold)' }}>{data.name}</span>
+        <span className="dim" style={{ fontSize: 10, marginLeft: 8 }}>
+          {data.primary_exchange} · {data.sic_description}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        <StatTile label="MARKET CAP" value={data.market_cap ? '$' + fmtNum(data.market_cap) : '—'} />
+        <StatTile label="EMPLOYEES" value={data.total_employees ? data.total_employees.toLocaleString() : '—'} />
+        <StatTile label="SHARES OUT" value={fmtNum(data.share_class_shares_outstanding || data.weighted_shares_outstanding)} />
+        {shortLoading ? (
+          <StatTile label="SHORT INTEREST" value="…" />
+        ) : short?.available ? (
+          <StatTile
+            label="SHORT INTEREST"
+            value={fmtNum(short.short_interest)}
+            valueColor={short.change_pct > 0 ? 'var(--red)' : short.change_pct < 0 ? 'var(--green)' : undefined}
+          />
+        ) : (
+          <StatTile label="SHORT INTEREST" value="n/a" />
+        )}
+      </div>
+
+      {short?.available && (
+        <div className="dim" style={{ fontSize: 9, marginBottom: 12 }}>
+          Short interest as of {short.settlement_date}: {fmtNum(short.short_interest)} shares
+          ({short.change_pct > 0 ? '+' : ''}{short.change_pct}% vs prior settlement),
+          {' '}{short.days_to_cover != null ? `${short.days_to_cover} days to cover` : ''}.
+          Source: {short.source}.
+        </div>
+      )}
+      {!shortLoading && short && !short.available && (
+        <div className="dim" style={{ fontSize: 9, marginBottom: 12, fontStyle: 'italic' }}>
+          Short interest unavailable: {short.reason}
+        </div>
+      )}
+
+      {data.description && (
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          {data.description}
+        </div>
+      )}
+
+      <div style={{ marginTop: 12, fontSize: 10 }} className="dim">
+        {data.address?.address1 && <div>{data.address.address1}, {data.address.city} {data.address.state}</div>}
+        {data.homepage_url && (
+          <a href={data.homepage_url} target="_blank" rel="noreferrer" style={{ color: 'var(--steel-bright)' }}>
+            {data.homepage_url}
+          </a>
+        )}
+        {data.list_date && <div>Listed: {data.list_date}</div>}
+      </div>
+    </div>
+  )
+}
+
+function Dividends({ symbol }) {
+  const { data: divs, loading: divLoading } = useDividends(symbol)
+  const { data: splits, loading: splitLoading } = useSplits(symbol)
+
+  if (divLoading) return <div style={{ padding: 12, color: 'var(--text-dim)' }}>Loading dividends…</div>
+
+  return (
+    <div>
+      {!divs?.length ? (
+        <div style={{ padding: 12, color: 'var(--text-dim)', fontSize: 11 }}>No dividend history found.</div>
+      ) : (
+        <table className="bbg-table">
+          <thead><tr><th>EX-DATE</th><th>PAY DATE</th><th>RECORD DATE</th><th>AMOUNT</th><th>FREQ</th><th>TYPE</th></tr></thead>
+          <tbody>
+            {divs.map((d, i) => (
+              <tr key={i}>
+                <td style={{ color: 'var(--gold)' }}>{d.ex_dividend_date}</td>
+                <td>{d.pay_date || '—'}</td>
+                <td>{d.record_date || '—'}</td>
+                <td className="green">${d.cash_amount?.toFixed(4)}</td>
+                <td>{d.frequency === 4 ? 'Quarterly' : d.frequency === 1 ? 'Annual' :
+                     d.frequency === 12 ? 'Monthly' : d.frequency === 2 ? 'Semi-annual' : (d.frequency ?? '—')}</td>
+                <td className="dim">{d.dividend_type || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{ padding: '10px 12px 4px', borderTop: '1px solid var(--border)', marginTop: 8 }}>
+        <span className="dim" style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.5 }}>STOCK SPLITS</span>
+      </div>
+      {splitLoading ? (
+        <div style={{ padding: 12, color: 'var(--text-dim)', fontSize: 11 }}>Loading splits…</div>
+      ) : !splits?.length ? (
+        <div style={{ padding: 12, color: 'var(--text-dim)', fontSize: 11 }}>No split history found.</div>
+      ) : (
+        <table className="bbg-table">
+          <thead><tr><th>EXECUTION DATE</th><th>RATIO</th></tr></thead>
+          <tbody>
+            {splits.map((s, i) => (
+              <tr key={i}>
+                <td style={{ color: 'var(--gold)' }}>{s.execution_date}</td>
+                <td>{s.split_to}:{s.split_from}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+function Ratings({ symbol }) {
+  const { data, loading } = useAnalystRatings(symbol)
+  if (loading) return <div style={{ padding: 12, color: 'var(--text-dim)' }}>Loading ratings…</div>
+  if (!data?.available)
+    return <div style={{ padding: 12, color: 'var(--text-dim)', fontSize: 11 }}>
+      Analyst ratings unavailable. {data?.note || data?.reason}
+    </div>
+
+  const c = data.consensus || {}
+  const pt = data.price_target || {}
+
+  return (
+    <div style={{ padding: 12 }}>
+      <div className="dim" style={{ fontSize: 9, marginBottom: 6 }}>
+        CONSENSUS {c.period ? `(${c.period})` : ''}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+        <StatTile label="STRONG BUY" value={c.strong_buy ?? 0} valueColor="var(--green)" />
+        <StatTile label="BUY" value={c.buy ?? 0} valueColor="var(--green)" />
+        <StatTile label="HOLD" value={c.hold ?? 0} valueColor="var(--gold)" />
+        <StatTile label="SELL" value={c.sell ?? 0} valueColor="var(--red)" />
+        <StatTile label="STRONG SELL" value={c.strong_sell ?? 0} valueColor="var(--red)" />
+      </div>
+
+      <div className="dim" style={{ fontSize: 9, marginBottom: 6 }}>PRICE TARGET</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+        <StatTile label="LOW" value={pt.low != null ? '$' + pt.low.toFixed(2) : '—'} />
+        <StatTile label="MEAN" value={pt.mean != null ? '$' + pt.mean.toFixed(2) : '—'} valueColor="var(--gold)" />
+        <StatTile label="MEDIAN" value={pt.median != null ? '$' + pt.median.toFixed(2) : '—'} />
+        <StatTile label="HIGH" value={pt.high != null ? '$' + pt.high.toFixed(2) : '—'} />
+      </div>
+
+      {!!data.history?.length && (
+        <table className="bbg-table">
+          <thead><tr><th>PERIOD</th><th>S.BUY</th><th>BUY</th><th>HOLD</th><th>SELL</th><th>S.SELL</th></tr></thead>
+          <tbody>
+            {data.history.map((h, i) => (
+              <tr key={i}>
+                <td style={{ color: 'var(--gold)' }}>{h.period}</td>
+                <td className="green">{h.strong_buy}</td>
+                <td className="green">{h.buy}</td>
+                <td>{h.hold}</td>
+                <td className="red">{h.sell}</td>
+                <td className="red">{h.strong_sell}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="dim" style={{ fontSize: 9, marginTop: 8, fontStyle: 'italic' }}>Source: {data.source}</div>
     </div>
   )
 }
@@ -92,14 +286,14 @@ function Social({ symbol }) {
 export default function CompanyDetail() {
   const [symbol, setSymbol] = useState('AAPL')
   const [input, setInput] = useState('AAPL')
-  const [tab, setTab] = useState('filings')
+  const [tab, setTab] = useState('profile')
 
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
         <span className="title">Company Detail</span>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {['filings', 'earnings', 'social'].map(t => (
+          {['profile', 'filings', 'earnings', 'dividends', 'ratings', 'social'].map(t => (
             <button key={t} className={`btn ${tab === t ? 'active' : ''}`}
               onClick={() => setTab(t)}>{t.toUpperCase()}</button>
           ))}
@@ -109,9 +303,12 @@ export default function CompanyDetail() {
         </div>
       </div>
       <div className="panel-body">
-        {tab === 'filings'  && <Filings symbol={symbol} />}
-        {tab === 'earnings' && <Earnings symbol={symbol} />}
-        {tab === 'social'   && <Social symbol={symbol} />}
+        {tab === 'profile'   && <Profile symbol={symbol} />}
+        {tab === 'filings'   && <Filings symbol={symbol} />}
+        {tab === 'earnings'  && <Earnings symbol={symbol} />}
+        {tab === 'dividends' && <Dividends symbol={symbol} />}
+        {tab === 'ratings'   && <Ratings symbol={symbol} />}
+        {tab === 'social'    && <Social symbol={symbol} />}
       </div>
     </div>
   )

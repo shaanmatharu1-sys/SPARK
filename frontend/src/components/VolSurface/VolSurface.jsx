@@ -9,7 +9,7 @@ import { useVolSurface } from '../../hooks/useMarketData'
 function Metric({ label, value, color }) {
   return (
     <div style={{ flex: 1, textAlign: 'center', padding: '6px 4px',
-                  background: '#0a0c10', borderRadius: 3 }}>
+                  background: 'var(--bg-base)', borderRadius: 3 }}>
       <div className="dim" style={{ fontSize: 8 }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 'bold', color: color || 'var(--text-primary)' }}>
         {value}
@@ -19,7 +19,10 @@ function Metric({ label, value, color }) {
 }
 
 // Distinct colors per expiration for the smile scatter
-const EXP_COLORS = ['#42a5f5', '#00c853', '#f0a500', '#7c4dff', '#ff3d57', '#00bcd4', '#ff8c00']
+const EXP_COLORS = [
+  'var(--steel-bright)', 'var(--green)', 'var(--gold)', 'var(--purple)',
+  'var(--red)', 'var(--cyan)', 'var(--gold-bright)',
+]
 
 export default function VolSurface() {
   const { symbol, setSymbol } = useSymbol()
@@ -55,9 +58,9 @@ export default function VolSurface() {
         <span className="title">Vol Surface</span>
         <input value={input} onChange={e => setInput(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && setSymbol(input)}
-          style={{ background: '#0a0c10', border: '1px solid var(--border-accent)',
+          style={{ background: 'var(--bg-base)', border: '1px solid var(--border-accent)',
                    color: 'var(--yellow)', padding: '2px 6px', fontSize: 10,
-                   borderRadius: 3, width: 64, fontFamily: 'Courier New', fontWeight: 'bold' }} />
+                   borderRadius: 3, width: 64, fontFamily: 'var(--font-mono)', fontWeight: 'bold' }} />
       </div>
       <div className="panel-body" style={{ padding: 8 }}>
         {loading && <div style={{ color: 'var(--text-dim)' }}>Solving IV surface for {symbol}...</div>}
@@ -83,15 +86,15 @@ export default function VolSurface() {
             <div style={{ height: 120 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={termData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#131820" />
-                  <XAxis dataKey="exp" tick={{ fill: '#546e7a', fontSize: 8 }} axisLine={{ stroke: '#1c2333' }} />
-                  <YAxis tick={{ fill: '#546e7a', fontSize: 8 }} axisLine={{ stroke: '#1c2333' }}
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="exp" tick={{ fill: 'var(--text-dim)', fontSize: 8 }} axisLine={{ stroke: 'var(--border-bright)' }} />
+                  <YAxis tick={{ fill: 'var(--text-dim)', fontSize: 8 }} axisLine={{ stroke: 'var(--border-bright)' }}
                          tickFormatter={v => `${v}%`} width={38} domain={['auto', 'auto']} />
-                  <Tooltip contentStyle={{ background: '#0e1118', border: '1px solid #1c2333',
-                           borderRadius: 4, fontSize: 10, fontFamily: 'Courier New' }}
+                  <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                           borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }}
                            formatter={v => `${v}%`} />
-                  <Line type="monotone" dataKey="iv" stroke="#42a5f5" strokeWidth={2}
-                        dot={{ fill: '#42a5f5', r: 3 }} />
+                  <Line type="monotone" dataKey="iv" stroke="var(--steel-bright)" strokeWidth={2}
+                        dot={{ fill: 'var(--steel-bright)', r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -101,17 +104,17 @@ export default function VolSurface() {
             <div style={{ height: 140 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#131820" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis type="number" dataKey="moneyness" name="moneyness"
-                         domain={['auto', 'auto']} tick={{ fill: '#546e7a', fontSize: 8 }}
-                         axisLine={{ stroke: '#1c2333' }}
+                         domain={['auto', 'auto']} tick={{ fill: 'var(--text-dim)', fontSize: 8 }}
+                         axisLine={{ stroke: 'var(--border-bright)' }}
                          tickFormatter={v => v.toFixed(2)} />
                   <YAxis type="number" dataKey="iv" name="IV"
-                         tick={{ fill: '#546e7a', fontSize: 8 }} axisLine={{ stroke: '#1c2333' }}
+                         tick={{ fill: 'var(--text-dim)', fontSize: 8 }} axisLine={{ stroke: 'var(--border-bright)' }}
                          tickFormatter={v => `${v.toFixed(0)}%`} width={38} domain={['auto', 'auto']} />
                   <ZAxis range={[20, 20]} />
-                  <Tooltip contentStyle={{ background: '#0e1118', border: '1px solid #1c2333',
-                           borderRadius: 4, fontSize: 10, fontFamily: 'Courier New' }}
+                  <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                           borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }}
                            formatter={(v, n) => n === 'IV' ? `${v.toFixed(1)}%` : v.toFixed(3)} />
                   <Legend wrapperStyle={{ fontSize: 8 }} />
                   {smileByExp.slice(0, 5).map(g => (

@@ -3,11 +3,11 @@ import { useSignals } from '../../hooks/useMarketData'
 
 function SignalBadge({ signal }) {
   const map = {
-    STRONG_LONG:  { bg: '#1a4a2e', color: '#00e676', label: 'STRONG LONG' },
-    LONG:         { bg: '#15331f', color: '#69f0ae', label: 'LONG' },
-    NEUTRAL:      { bg: '#1c2333', color: '#7a92ab', label: 'NEUTRAL' },
-    SHORT:        { bg: '#3a1518', color: '#ff8a80', label: 'SHORT' },
-    STRONG_SHORT: { bg: '#4a1a1f', color: '#ff3d57', label: 'STRONG SHORT' },
+    STRONG_LONG:  { bg: 'var(--green-dim)', color: 'var(--green)', label: 'STRONG LONG' },
+    LONG:         { bg: 'var(--green-dim)', color: 'var(--green)', label: 'LONG' },
+    NEUTRAL:      { bg: 'var(--bg-raised)', color: 'var(--text-dim)', label: 'NEUTRAL' },
+    SHORT:        { bg: 'var(--red-dim)', color: 'var(--red)', label: 'SHORT' },
+    STRONG_SHORT: { bg: 'var(--red-dim)', color: 'var(--red)', label: 'STRONG SHORT' },
   }
   const s = map[signal] || map.NEUTRAL
   return (
@@ -21,7 +21,7 @@ function SignalBadge({ signal }) {
 function Row({ label, value, color }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0',
-                  borderBottom: '1px solid #0f151e' }}>
+                  borderBottom: '1px solid var(--border)' }}>
       <span className="dim" style={{ fontSize: 10 }}>{label}</span>
       <span style={{ fontSize: 11, color: color || 'var(--text-primary)', fontWeight: 'bold' }}>{value}</span>
     </div>
@@ -52,9 +52,9 @@ export default function Signals() {
         <span className="title">Signals</span>
         <input value={input} onChange={e => setInput(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && setSymbol(input)}
-          style={{ background: '#0a0c10', border: '1px solid var(--border-accent)',
+          style={{ background: 'var(--bg-base)', border: '1px solid var(--border-accent)',
                    color: 'var(--yellow)', padding: '2px 6px', fontSize: 10,
-                   borderRadius: 3, width: 64, fontFamily: 'Courier New', fontWeight: 'bold' }} />
+                   borderRadius: 3, width: 64, fontFamily: 'var(--font-mono)', fontWeight: 'bold' }} />
       </div>
       <div className="panel-body" style={{ padding: 10 }}>
         {loading && <div style={{ color: 'var(--text-dim)' }}>Computing signals...</div>}
@@ -92,7 +92,7 @@ export default function Signals() {
                 <div className="dim" style={{ fontSize: 9, marginBottom: 4 }}>MOMENTUM (RISK-ADJ)</div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {Object.entries(data.momentum).map(([lb, m]) => (
-                    <div key={lb} style={{ flex: 1, textAlign: 'center', background: '#0a0c10',
+                    <div key={lb} style={{ flex: 1, textAlign: 'center', background: 'var(--bg-base)',
                                            borderRadius: 3, padding: '4px 0' }}>
                       <div className="dim" style={{ fontSize: 8 }}>{lb}</div>
                       <div style={{ fontSize: 11, fontWeight: 'bold',

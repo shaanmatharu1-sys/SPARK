@@ -52,8 +52,6 @@
   --border-accent:  #244873;   /* -> border-bright */
   --bg-panel-hover: #16314F;   /* -> bg-raised */
   --text-label:     #5E789A;   /* -> text-dim */
-  --green-dim:      #1C4A3A;
-  --red-dim:        #4A2028;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -197,6 +195,7 @@ body {
   transition: all 0.15s ease;
 }
 .btn:hover { border-color: var(--gold-dim); color: var(--text-primary); }
+.btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
 .btn.active {
   background: linear-gradient(to bottom, var(--gold), var(--gold-dim));
   color: #0B1929;

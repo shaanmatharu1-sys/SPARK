@@ -34,12 +34,21 @@ export function useFetch(endpoint, intervalMs = null) {
 }
 
 export function useQuotes(symbols) {
+  // Live price ticks already arrive over the /quotes/ws websocket (see MarketMonitor);
+  // this REST poll only needs to refresh the slower-moving day OHLC/volume/vwap fields,
+  // so a 5s interval was pure redundant load on Polygon/Redis for no visible benefit.
   const symsParam = symbols.join(',')
-  return useFetch(`/quotes/snapshot?symbols=${symsParam}`, 5000)
+  return useFetch(`/quotes/snapshot?symbols=${symsParam}`, 60_000)
 }
 
-export function useBars(symbol, multiplier = 1, timespan = 'minute') {
-  return useFetch(`/quotes/${symbol}/bars?multiplier=${multiplier}&timespan=${timespan}`, null)
+export function useTickerDetails(symbol) {
+  return useFetch(symbol ? `/quotes/${symbol}/details` : null, null)
+}
+
+export function useBars(symbol, multiplier = 1, timespan = 'minute', limit = 390) {
+  // 30s poll as a baseline so the chart doesn't go stale between symbol/timeframe
+  // changes; PriceChart additionally layers live websocket ticks on top for 1D view.
+  return useFetch(`/quotes/${symbol}/bars?multiplier=${multiplier}&timespan=${timespan}&limit=${limit}`, 30_000)
 }
 
 export function useMacroDashboard() {
@@ -155,6 +164,20 @@ export function useSocial(symbol) {
   return useFetch(`/markets/social/${symbol}`, 300_000)
 }
 
+// ── Corporate actions / fundamentals ──
+export function useDividends(symbol) {
+  return useFetch(symbol ? `/quotes/${symbol}/dividends` : null, 3600_000)
+}
+export function useSplits(symbol) {
+  return useFetch(symbol ? `/quotes/${symbol}/splits` : null, 3600_000)
+}
+export function useShortInterest(symbol) {
+  return useFetch(symbol ? `/fundamentals/${symbol}/short-interest` : null, 3600_000)
+}
+export function useAnalystRatings(symbol) {
+  return useFetch(symbol ? `/fundamentals/${symbol}/ratings` : null, 3600_000)
+}
+
 // ── Watchlist ──
 export function useWatchlist() {
   return useFetch('/watchlist/', null)
@@ -258,6 +281,11 @@ export function useMacroExpanded(category) {
 // ── Vessel map (AISstream) ──
 export function useVessels() {
   return useFetch('/markets/vessels', 20_000)
+}
+
+// ── Flight tracking (OpenSky Network) ──
+export function useFlights() {
+  return useFetch('/markets/flights', 18_000)
 }
 
 // ── Company relationship ties (SPLC-style) ──

@@ -134,16 +134,29 @@ async def fetch_unusual_activity(symbol: str = None) -> list:
     return results
 
 
+# Lookback window must be wide enough to actually contain `limit` bars for a given
+# timespan, otherwise a narrow default (e.g. 30 days) silently truncates 3M/1Y requests
+# to whatever fits in 30 days instead of the range the user asked for.
+_LOOKBACK_DAYS = {
+    "minute": 10,
+    "hour":   60,
+    "day":    400,
+    "week":   800,
+    "month":  1800,
+}
+
+
 async def fetch_agg_bars(symbol: str, multiplier: int = 1, timespan: str = "minute",
                           from_date: str = None, to_date: str = None, limit: int = 390) -> list:
     """Fetch OHLCV bars for charting."""
     import datetime
     today = datetime.date.today().isoformat()
-    month_ago = (datetime.date.today() - datetime.timedelta(days=30)).isoformat()
-    from_date = from_date or month_ago
-    to_date   = to_date   or today
+    if from_date is None:
+        lookback = _LOOKBACK_DAYS.get(timespan, 400) * max(multiplier, 1)
+        from_date = (datetime.date.today() - datetime.timedelta(days=lookback)).isoformat()
+    to_date = to_date or today
 
-    cache_key = f"bars:{symbol}:{multiplier}{timespan}:{from_date}:{to_date}"
+    cache_key = f"bars:{symbol}:{multiplier}{timespan}:{from_date}:{to_date}:{limit}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
@@ -151,10 +164,13 @@ async def fetch_agg_bars(symbol: str, multiplier: int = 1, timespan: str = "minu
     async with aiohttp.ClientSession() as session:
         data = await _get(session,
             f"/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{from_date}/{to_date}",
-            {"adjusted": "true", "sort": "asc", "limit": limit}
+            # sort=desc + limit grabs the most recent `limit` bars regardless of how wide
+            # the lookback window is; reversed below into chronological order for the chart.
+            {"adjusted": "true", "sort": "desc", "limit": limit}
         )
 
     bars = data.get("results", []) if data else []
+    bars.reverse()
     await cache_set(cache_key, bars, 60)
     return bars
 
@@ -168,6 +184,34 @@ async def fetch_ticker_details(symbol: str) -> dict:
     result = data.get("results", {}) if data else {}
     await cache_set(f"details:{symbol}", result, 86400)
     return result
+
+
+async def fetch_dividends(symbol: str) -> list:
+    """Cash dividend history for a ticker (declaration/ex/record/pay dates + amount)."""
+    cache_key = f"dividends:{symbol}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+    async with aiohttp.ClientSession() as session:
+        data = await _get(session, "/v3/reference/dividends",
+            {"ticker": symbol, "limit": 50, "order": "desc", "sort": "ex_dividend_date"})
+    results = data.get("results", []) if data else []
+    await cache_set(cache_key, results, 86400)  # 24h — dividend history rarely changes intraday
+    return results
+
+
+async def fetch_splits(symbol: str) -> list:
+    """Stock split history for a ticker (execution date + split ratio)."""
+    cache_key = f"splits:{symbol}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+    async with aiohttp.ClientSession() as session:
+        data = await _get(session, "/v3/reference/splits",
+            {"ticker": symbol, "limit": 50, "order": "desc", "sort": "execution_date"})
+    results = data.get("results", []) if data else []
+    await cache_set(cache_key, results, 86400)  # 24h — splits are rare, infrequent events
+    return results
 
 
 # ════════════════════════════════════════════════════════════════

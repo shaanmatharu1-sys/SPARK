@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef } from 'react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useQuotes } from '../../hooks/useMarketData'
 
-const WATCHLIST = ['SPY','QQQ','IWM','AAPL','MSFT','NVDA','TSLA','META','GOOGL','AMZN']
+const DEFAULT_WATCHLIST = ['SPY','QQQ','IWM','AAPL','MSFT','NVDA','TSLA','META','GOOGL','AMZN']
 
 function fmt(n, decimals = 2) {
   if (n == null) return '—'
@@ -19,12 +19,13 @@ function PctChange({ value }) {
   )
 }
 
-export default function MarketMonitor() {
+export default function MarketMonitor({ symbols }) {
+  const WATCHLIST = symbols?.length ? symbols : DEFAULT_WATCHLIST
   const [prices, setPrices] = useState({})
   const flashRef = useRef({})
 
   // Initial snapshot via REST
-  const { data: snapshot } = useQuotes(WATCHLIST)
+  const { data: snapshot, loading } = useQuotes(WATCHLIST)
 
   // Merge snapshot into prices
   React.useEffect(() => {
@@ -50,6 +51,9 @@ export default function MarketMonitor() {
     const sym = msg.symbol
     setPrices(prev => {
       const existing = prev[sym] || {}
+      flashRef.current[sym] = existing.price != null
+        ? (msg.price >= existing.price ? 'flash-green' : 'flash-red')
+        : ''
       return {
         ...prev,
         [sym]: {
@@ -60,13 +64,8 @@ export default function MarketMonitor() {
         }
       }
     })
-    // Track flash direction
-    const prev = prices[sym]?.price
-    flashRef.current[sym] = prev != null
-      ? (msg.price >= prev ? 'flash-green' : 'flash-red')
-      : ''
     setTimeout(() => { flashRef.current[sym] = '' }, 600)
-  }, [prices])
+  }, [])
 
   const wsStatus = useWebSocket(
     `/quotes/ws?symbols=${WATCHLIST.join(',')}`,
@@ -86,43 +85,47 @@ export default function MarketMonitor() {
       </div>
 
       <div className="panel-body">
-        <table className="bbg-table">
-          <thead>
-            <tr>
-              <th>SYMBOL</th>
-              <th>PRICE</th>
-              <th>CHG%</th>
-              <th>OPEN</th>
-              <th>HIGH</th>
-              <th>LOW</th>
-              <th>VWAP</th>
-              <th>VOLUME</th>
-            </tr>
-          </thead>
-          <tbody>
-            {WATCHLIST.map(sym => {
-              const q = prices[sym] || {}
-              const pct = q.price && q.prev_close
-                ? ((q.price - q.prev_close) / q.prev_close) * 100
-                : null
+        {loading && Object.keys(prices).length === 0 ? (
+          <div style={{ padding: 16, color: 'var(--text-dim)' }}>Loading…</div>
+        ) : (
+          <table className="bbg-table">
+            <thead>
+              <tr>
+                <th>SYMBOL</th>
+                <th>PRICE</th>
+                <th>CHG%</th>
+                <th>OPEN</th>
+                <th>HIGH</th>
+                <th>LOW</th>
+                <th>VWAP</th>
+                <th>VOLUME</th>
+              </tr>
+            </thead>
+            <tbody>
+              {WATCHLIST.map(sym => {
+                const q = prices[sym] || {}
+                const pct = q.price && q.prev_close
+                  ? ((q.price - q.prev_close) / q.prev_close) * 100
+                  : null
 
-              return (
-                <tr key={sym} className={flashRef.current[sym] || ''}>
-                  <td style={{ color: 'var(--yellow)', fontWeight: 'bold' }}>{sym}</td>
-                  <td style={{ color: 'var(--text-primary)' }}>{fmt(q.price)}</td>
-                  <td><PctChange value={pct} /></td>
-                  <td>{fmt(q.open)}</td>
-                  <td className="green">{fmt(q.high)}</td>
-                  <td className="red">{fmt(q.low)}</td>
-                  <td>{fmt(q.vwap)}</td>
-                  <td className="dim">
-                    {q.volume ? (q.volume / 1e6).toFixed(1) + 'M' : '—'}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+                return (
+                  <tr key={sym} className={flashRef.current[sym] || ''}>
+                    <td style={{ color: 'var(--yellow)', fontWeight: 'bold' }}>{sym}</td>
+                    <td style={{ color: 'var(--text-primary)' }}>{fmt(q.price)}</td>
+                    <td><PctChange value={pct} /></td>
+                    <td>{fmt(q.open)}</td>
+                    <td className="green">{fmt(q.high)}</td>
+                    <td className="red">{fmt(q.low)}</td>
+                    <td>{fmt(q.vwap)}</td>
+                    <td className="dim">
+                      {q.volume ? (q.volume / 1e6).toFixed(1) + 'M' : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )
