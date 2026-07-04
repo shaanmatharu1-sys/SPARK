@@ -25,4 +25,5 @@ EXPOSE 8000
 
 # Start the server. Single worker — required because the WebSocket feeds
 # and scheduler must run in exactly one process (see note in README).
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1
+# Migrations run first since schema management is not done in-app (see db.py).
+CMD alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1
