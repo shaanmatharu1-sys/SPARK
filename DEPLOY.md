@@ -31,11 +31,14 @@ Expected cost: **~$10–15/month.** Set a spending limit (Step 7) to cap risk.
 
 ---
 
-## Step 1 — Create the project + Redis
+## Step 1 — Create the project + Redis + Postgres
 
 1. Railway dashboard -> **New Project** -> **Deploy from GitHub repo** -> pick your repo.
 2. Once it imports, click **+ New** -> **Database** -> **Add Redis**.
    Railway provisions Redis and exposes a `REDIS_URL` variable automatically.
+3. Click **+ New** -> **Database** -> **Add PostgreSQL**. This is the durable
+   store for accounts, watchlists, portfolios, and algo configs (everything
+   framed as "yours" — separate from the Redis market-data cache).
 
 ## Step 2 — Configure the backend service
 
@@ -56,12 +59,24 @@ In the backend service -> **Variables**, add:
 | `POLYGON_API_KEY` | your Polygon key |
 | `FRED_API_KEY` | your FRED key |
 | `NEWS_API_KEY` | your NewsAPI key (optional) |
+| `FINNHUB_API_KEY` | your Finnhub key (optional — enables analyst ratings) |
 | `REDIS_URL` | `${{Redis.REDIS_URL}}` — references the Redis service |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` — references the Postgres service |
+| `JWT_SECRET` | a long random string, e.g. output of `openssl rand -hex 32` |
+| `SIGNUP_INVITE_CODE` | *(optional — gates `/auth/signup` behind an invite code)* |
 | `CORS_ORIGINS` | *(fill in after Step 5 — your frontend URL)* |
 | `ENV` | `production` |
 
-> The `${{Redis.REDIS_URL}}` syntax is Railway's service reference — it wires
-> the backend to your Redis automatically. Type it exactly.
+> The `${{Redis.REDIS_URL}}` / `${{Postgres.DATABASE_URL}}` syntax is
+> Railway's service reference — it wires the backend to those services
+> automatically. Type it exactly. Railway's Postgres URL has no driver
+> suffix (`postgresql://...`); `backend/config.py` normalizes it to
+> `postgresql+asyncpg://...` automatically, so no manual edits needed.
+>
+> After the first deploy with `DATABASE_URL` set, run migrations once so the
+> `users`/`watchlists`/etc. tables exist: open a shell on the backend service
+> (Railway dashboard -> service -> **... -> Shell**, or `railway run`) and run
+> `cd backend && alembic upgrade head`.
 
 ## Step 4 — Create the frontend service
 
