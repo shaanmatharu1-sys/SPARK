@@ -268,6 +268,11 @@ export const alertsApi = {
   },
 }
 
+// ── Market regime dashboard ──
+export function useMarketRegime() {
+  return useFetch('/regime/', 300_000)
+}
+
 // ── Multi-chart workspace (persisted per-user grid layout) ──
 export function useWorkspace() {
   return useFetch('/workspace/', null)

@@ -34,6 +34,7 @@ import International    from './components/International/International'
 import Futures          from './components/Futures/Futures'
 import MultiChart        from './components/MultiChart/MultiChart'
 import NotificationBell  from './components/Alerts/NotificationBell'
+import Regime            from './components/Regime/Regime'
 import AltData          from './components/AltData/AltData'
 import BacktestTab      from './components/Backtest/BacktestTab'
 import Arbitrage        from './components/Arbitrage/Arbitrage'
@@ -122,6 +123,7 @@ const TABS = [
   { id: 'world',     label: 'WORLD' },
   { id: 'futures',   label: 'FUTURES' },
   { id: 'multichart',label: 'MULTI' },
+  { id: 'regime',    label: 'REGIME' },
   { id: 'events',    label: 'EVENTS' },
   { id: 'altdata',   label: 'ALT-DATA' },
   { id: 'whales',    label: 'WHALES' },
@@ -314,6 +316,14 @@ function MultiChartLayout() {
   return (
     <div style={{ height: '100%' }}>
       <MultiChart />
+    </div>
+  )
+}
+
+function RegimeLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <Regime />
     </div>
   )
 }
@@ -518,6 +528,7 @@ function AppInner() {
         {activeTab === 'world'    && <WorldLayout />}
         {activeTab === 'futures'  && <FuturesLayout />}
         {activeTab === 'multichart' && <MultiChartLayout />}
+        {activeTab === 'regime'   && <RegimeLayout />}
         {activeTab === 'events'   && <EventsLayout />}
         {activeTab === 'altdata'  && <AltDataLayout />}
         {activeTab === 'whales'   && <WhalesLayout />}

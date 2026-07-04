@@ -18,7 +18,7 @@ from config import CORS_ORIGINS, DEFAULT_WATCHLIST, SECTOR_ETFS
 from cache.redis_client import ping as redis_ping
 
 # ── Routers ──────────────────────────────────────────────────────────────────
-from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata, fundamentals, futures, workspace, alerts, auth as auth_router
+from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata, fundamentals, futures, workspace, alerts, regime, auth as auth_router
 
 # ── Background WS feeds ──────────────────────────────────────────────────────
 from services.polygon_client import PolygonStocksWS, PolygonOptionsWS
@@ -79,6 +79,19 @@ def setup_scheduler():
     scheduler.add_job(_refresh_relationships, "date",
                       run_date=datetime.datetime.now() + datetime.timedelta(seconds=90),
                       id="relationships_prime")
+
+    # Market regime — precompute hourly (depends on the relationships job's
+    # cached universe returns for breadth, so prime it a bit after that job)
+    async def _refresh_regime():
+        try:
+            from analytics.regime.engine import precompute_market_regime
+            await precompute_market_regime()
+        except Exception as e:
+            logger.warning(f"[Regime] precompute failed: {e}")
+    scheduler.add_job(_refresh_regime, "interval", hours=1, id="market_regime")
+    scheduler.add_job(_refresh_regime, "date",
+                      run_date=datetime.datetime.now() + datetime.timedelta(seconds=120),
+                      id="market_regime_prime")
 
     # Price alerts — check active alerts against live prices every 30s
     async def _check_price_alerts():
@@ -219,6 +232,7 @@ app.include_router(fundamentals.router)
 app.include_router(futures.router)
 app.include_router(workspace.router)
 app.include_router(alerts.router)
+app.include_router(regime.router)
 app.include_router(auth_router.router)
 
 
