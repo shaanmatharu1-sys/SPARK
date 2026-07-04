@@ -50,7 +50,14 @@ export default function SymbolSearch({ value, onChange, onSelect, width = 120 })
         onFocus={() => value && runSearch(value)}
         onKeyDown={e => {
           if (e.key === 'Enter') {
-            if (open && results[highlight]) pick(results[highlight].ticker)
+            // An exact typed ticker should win over whatever's highlighted —
+            // otherwise Enter silently picks the top-scored suggestion (e.g.
+            // typing "AAPL" and hitting Enter could select "AAPB" if that
+            // ranked first), which is surprising for the very common case of
+            // typing a ticker you already know.
+            const exact = open && results.find(r => r.ticker.toUpperCase() === value.toUpperCase())
+            if (exact) pick(exact.ticker)
+            else if (open && results[highlight]) pick(results[highlight].ticker)
             else onSelect(value)
           } else if (e.key === 'ArrowDown') {
             e.preventDefault()

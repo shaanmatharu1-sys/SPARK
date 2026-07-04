@@ -35,6 +35,12 @@ class User(Base):
     option_positions: Mapped[list["OptionPosition"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    workspace: Mapped["ChartWorkspace"] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
+    alerts: Mapped[list["Alert"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Watchlist(Base):
@@ -112,3 +118,32 @@ class OptionPosition(Base):
     cost_basis: Mapped[float] = mapped_column(Float)
 
     user: Mapped["User"] = relationship(back_populates="option_positions")
+
+
+class ChartWorkspace(Base):
+    """One saved multi-chart grid layout per user (rows/cols + per-cell symbol/timeframe)."""
+    __tablename__ = "chart_workspaces"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    rows: Mapped[int] = mapped_column(Integer, default=2)
+    cols: Mapped[int] = mapped_column(Integer, default=2)
+    cells: Mapped[list] = mapped_column(JSON, default=list)  # [{row, col, symbol, timeframe}]
+
+    user: Mapped["User"] = relationship(back_populates="workspace")
+
+
+class Alert(Base):
+    """A user's price alert — active until triggered (or deleted)."""
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    symbol: Mapped[str] = mapped_column(String(16))
+    condition: Mapped[str] = mapped_column(String(8))  # "above" | "below"
+    threshold: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    triggered_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    active: Mapped[bool] = mapped_column(default=True)
+
+    user: Mapped["User"] = relationship(back_populates="alerts")

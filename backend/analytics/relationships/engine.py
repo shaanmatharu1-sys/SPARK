@@ -99,15 +99,61 @@ async def precompute_relationships(days=180):
                 corr[a][b] = round(c, 3)
                 corr[b][a] = round(c, 3)
 
-    payload = {
-        "computed_at": datetime.datetime.utcnow().isoformat(),
-        "symbols": syms,
-        "corr": corr,
-    }
+    now = datetime.datetime.utcnow().isoformat()
+    payload = {"computed_at": now, "symbols": syms, "corr": corr}
     # Cache for 12h; refreshed on schedule
     await cache_set(REL_CACHE_KEY, payload, ttl=43200)
+
+    # Also cache the raw aligned returns (previously computed but never stored —
+    # this lets an out-of-universe symbol be correlated against the universe
+    # on demand, fetching just ONE new series instead of recomputing all ~500).
+    await cache_set(RETURNS_CACHE_KEY, {"computed_at": now, "returns": aligned}, ttl=43200)
+
     logger.info(f"[Relationships] Cached ties for {len(syms)} symbols")
     return payload
+
+
+async def _correlate_against_universe(center: str, days=180, top_n=14):
+    """
+    For a symbol NOT in the precomputed universe: fetch its own returns (one
+    Polygon call, not ~500) and correlate against the cached universe returns.
+    No GICS classification is possible (the symbol has no sector/sub entry),
+    so results are ranked by correlation alone.
+    """
+    cached_returns = await cache_get(RETURNS_CACHE_KEY)
+    if not cached_returns:
+        return None  # universe returns not warm yet; caller falls back gracefully
+
+    today = datetime.date.today().isoformat()
+    start = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    try:
+        bars = await fetch_agg_bars(center, 1, "day", start, today, limit=5000)
+    except Exception:
+        bars = None
+    closes = [b["c"] for b in (bars or []) if b.get("c") is not None]
+    if len(closes) < 30:
+        return {"error": f"no price data for {center}"}
+
+    center_rets = q.simple_returns(closes)
+    universe_returns = cached_returns["returns"]
+
+    scored = []
+    for other, rets in universe_returns.items():
+        min_len = min(len(rets), len(center_rets))
+        if min_len < 20:
+            continue
+        c = q.correlation(center_rets[-min_len:], rets[-min_len:])
+        if c != c:  # NaN
+            continue
+        o = UNIVERSE.get(other, {})
+        scored.append({
+            "symbol": other, "name": o.get("name", other),
+            "sector": o.get("sector", "Unknown"), "sub": o.get("sub", ""),
+            "corr": round(c, 3), "affinity": 0.0, "score": round(abs(c), 3),
+            "same_group": False,
+        })
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:top_n]
 
 
 def _blended_ties(center, corr_row, top_n=14):
@@ -147,23 +193,63 @@ def _blended_ties(center, corr_row, top_n=14):
     return scored[:top_n]
 
 
+_precompute_inflight = False
+
+
+def _trigger_background_precompute():
+    """
+    Fire-and-forget precompute, guarded so a burst of requests while the cache
+    is cold doesn't launch N overlapping ~500-symbol recomputes at once.
+    """
+    global _precompute_inflight
+    if _precompute_inflight:
+        return
+    async def _run():
+        global _precompute_inflight
+        _precompute_inflight = True
+        try:
+            await precompute_relationships()
+        finally:
+            _precompute_inflight = False
+    asyncio.create_task(_run())
+
+
 async def get_company_ties(center: str, top_n: int = 14):
     """
     Return the relationship web for ONE company: its strongest ties across the
     universe, split into same-industry peers and cross-industry correlates.
-    Reads the precomputed cache; triggers a compute if cache is cold.
+    Reads the precomputed cache. NEVER blocks a request on a full ~500-symbol
+    recompute — a cold cache kicks off a background refresh and responds
+    immediately with a "warming up" note instead (that inline recompute used
+    to be exactly what made this feel laggy).
     """
     center = center.upper()
-    if center not in UNIVERSE:
-        return {"error": f"{center} not in universe", "in_universe": False,
-                "universe_size": len(SYMBOLS)}
-
     cached = await cache_get(REL_CACHE_KEY)
+
+    if center not in UNIVERSE:
+        # Not in the precomputed universe — correlate it on demand against
+        # cached universe returns (one new fetch, not a full recompute).
+        correlates = await _correlate_against_universe(center, top_n=top_n)
+        if correlates is None:
+            _trigger_background_precompute()
+            return {"error": f"{center} isn't in the precomputed universe yet and "
+                              f"the reference data is still warming up — try again shortly",
+                    "in_universe": False, "warming": True, "universe_size": len(SYMBOLS)}
+        if isinstance(correlates, dict) and "error" in correlates:
+            return correlates
+        return {
+            "center": center, "center_name": center, "center_sector": None, "center_sub": None,
+            "peers": [],  # no GICS classification available outside the curated universe
+            "correlates": correlates,
+            "computed_at": None, "universe_size": len(SYMBOLS),
+            "note": f"{center} isn't in the curated {len(SYMBOLS)}-name universe, so ties "
+                    f"are ranked by price correlation only (no sector/sub-industry match).",
+        }
+
     if not cached:
-        # Cold cache: compute now (slower first call)
-        cached = await precompute_relationships()
-        if not cached:
-            return {"error": "could not compute relationships (no price data)"}
+        _trigger_background_precompute()
+        return {"error": "Relationship matrix is warming up — try again in a few seconds",
+                "warming": True, "center": center}
 
     corr_row = cached.get("corr", {}).get(center)
     if not corr_row:

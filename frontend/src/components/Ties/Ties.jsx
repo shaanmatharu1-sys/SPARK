@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useCompanyTies } from '../../hooks/useMarketData'
 import { useSymbol } from '../../hooks/useSymbol'
+import SymbolSearch from '../common/SymbolSearch'
 
 const SECTOR_COLOR = {
   'Information Technology': '#6BA3D4',
@@ -61,21 +62,21 @@ export default function Ties() {
       <div className="panel-header">
         <span className="title">Company Relationships</span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <input className="input" style={{ width: 90, fontFamily: 'var(--font-mono)' }}
-            value={input} onChange={e => setInput(e.target.value.toUpperCase())}
-            onKeyDown={e => e.key === 'Enter' && go()}
-            placeholder="Ticker" />
+          <SymbolSearch value={input} onChange={setInput}
+            onSelect={(sym) => { setInput(sym); setSymbol(sym); setGlobalSym(sym) }}
+            width={140} />
           <button className="btn active" onClick={go}>Map ties</button>
         </div>
       </div>
       <div className="panel-body" style={{ overflow: 'auto' }}>
         {loading && <div style={{ padding: 16, color: 'var(--text-dim)' }}>Finding related companies…</div>}
         {data?.error && (
-          <div style={{ padding: 16, color: 'var(--red)' }}>
+          <div style={{ padding: 16, color: data.warming ? 'var(--gold)' : 'var(--red)' }}>
             {data.error}
-            {data.in_universe === false &&
+            {data.warming &&
               <div className="dim" style={{ fontSize: 11, marginTop: 6 }}>
-                This map covers a {data.universe_size}-name universe (S&P 500 + major names).
+                Reference data refreshes in the background — this only happens right after
+                a deploy/restart. Try again in a moment.
               </div>}
           </div>
         )}
@@ -105,7 +106,11 @@ export default function Ties() {
                 </div>
                 {data.peers?.length
                   ? data.peers.map(t => <TieCard key={t.symbol} tie={t} side="peer" />)
-                  : <div className="dim" style={{ fontSize: 11 }}>No same-industry names in universe.</div>}
+                  : <div className="dim" style={{ fontSize: 11 }}>
+                      {data.center_sector == null
+                        ? 'No sector/sub-industry data for this ticker.'
+                        : 'No same-industry names in universe.'}
+                    </div>}
               </div>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold-bright)',
@@ -121,7 +126,12 @@ export default function Ties() {
               </div>
             </div>
 
-            <div className="dim" style={{ fontSize: 9, marginTop: 14, lineHeight: 1.5 }}>
+            {data.note && (
+              <div style={{ fontSize: 10, color: 'var(--gold)', marginTop: 12, lineHeight: 1.5 }}>
+                {data.note}
+              </div>
+            )}
+            <div className="dim" style={{ fontSize: 9, marginTop: 8, lineHeight: 1.5 }}>
               Ties blend price correlation (60%) and GICS sub-industry/sector affinity (40%),
               ranked across a {data.universe_size}-name universe. These are statistical and
               classification ties — not disclosed supplier/customer relationships.

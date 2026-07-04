@@ -47,8 +47,13 @@ def build_network(universe: dict[str, list[float]],
     min_len = min(len(universe[s]) for s in symbols)
     rets = {s: _returns(universe[s][-min_len:]) for s in symbols}
 
-    # Pairwise correlations -> edges
+    # Pairwise correlations -> edges. Also keep an UNFILTERED list of every
+    # pair (all_correlations) so the frontend's threshold slider can re-filter
+    # client-side without a refetch — edges/adj below only ever include pairs
+    # at or above the requested threshold, so lowering the slider afterward
+    # would otherwise have nothing to reveal.
     edges = []
+    all_correlations = []
     adj = {s: [] for s in symbols}
     for i in range(len(symbols)):
         for j in range(i + 1, len(symbols)):
@@ -56,8 +61,10 @@ def build_network(universe: dict[str, list[float]],
             c = q.correlation(rets[a], rets[b])
             if c != c:  # NaN
                 continue
+            c = round(c, 3)
+            all_correlations.append({"source": a, "target": b, "weight": c})
             if abs(c) >= threshold:
-                edges.append({"source": a, "target": b, "weight": round(c, 3)})
+                edges.append({"source": a, "target": b, "weight": c})
                 adj[a].append(b)
                 adj[b].append(a)
 
@@ -79,12 +86,13 @@ def build_network(universe: dict[str, list[float]],
     clusters = _connected_components(symbols, adj)
 
     return {
-        "nodes":     nodes,
-        "edges":     edges,
-        "clusters":  clusters,
-        "n_nodes":   len(nodes),
-        "n_edges":   len(edges),
-        "threshold": threshold,
+        "nodes":             nodes,
+        "edges":             edges,
+        "all_correlations":  all_correlations,
+        "clusters":          clusters,
+        "n_nodes":           len(nodes),
+        "n_edges":           len(edges),
+        "threshold":         threshold,
     }
 
 

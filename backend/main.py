@@ -18,7 +18,7 @@ from config import CORS_ORIGINS, DEFAULT_WATCHLIST, SECTOR_ETFS
 from cache.redis_client import ping as redis_ping
 
 # ── Routers ──────────────────────────────────────────────────────────────────
-from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata, fundamentals, auth as auth_router
+from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata, fundamentals, futures, workspace, alerts, auth as auth_router
 
 # ── Background WS feeds ──────────────────────────────────────────────────────
 from services.polygon_client import PolygonStocksWS, PolygonOptionsWS
@@ -28,6 +28,10 @@ from services.fred_client    import fetch_macro_dashboard, fetch_yield_curve
 from services.fear_greed     import fetch_fear_greed
 from services.news_client    import fetch_news
 from services.polygon_client import fetch_snapshot, fetch_unusual_activity
+from sqlalchemy import select
+from db import AsyncSessionLocal
+from models import Alert
+from cache.redis_client import publish
 
 logging.basicConfig(
     level=logging.INFO,
@@ -76,8 +80,39 @@ def setup_scheduler():
                       run_date=datetime.datetime.now() + datetime.timedelta(seconds=90),
                       id="relationships_prime")
 
+    # Price alerts — check active alerts against live prices every 30s
+    async def _check_price_alerts():
+        async with AsyncSessionLocal() as db:
+            rows = (await db.scalars(select(Alert).where(Alert.active == True))).all()
+            if not rows:
+                return
+            symbols = list({r.symbol for r in rows})
+            try:
+                snap = await fetch_snapshot(symbols)
+            except Exception as e:
+                logger.warning(f"[Alerts] snapshot fetch failed: {e}")
+                return
+            for r in rows:
+                d = snap.get(r.symbol, {})
+                last = ((d.get("lastTrade", {}) or {}).get("p")
+                        or (d.get("day", {}) or {}).get("c")
+                        or (d.get("prevDay", {}) or {}).get("c"))
+                if last is None:
+                    continue
+                hit = ((r.condition == "above" and last >= r.threshold)
+                       or (r.condition == "below" and last <= r.threshold))
+                if hit:
+                    r.active = False
+                    r.triggered_at = datetime.datetime.utcnow()
+                    await publish(f"alerts:{r.user_id}", {
+                        "type": "alert_triggered", "id": r.id, "symbol": r.symbol,
+                        "condition": r.condition, "threshold": r.threshold, "price": last,
+                    })
+            await db.commit()
+    scheduler.add_job(_check_price_alerts, "interval", seconds=30, id="price_alerts")
+
     scheduler.start()
-    logger.info("[Scheduler] Started — macro/1hr, F&G/10min, news/5min, sectors/30s, ties/4hr")
+    logger.info("[Scheduler] Started — macro/1hr, F&G/10min, news/5min, sectors/30s, ties/4hr, alerts/30s")
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────────────
@@ -181,6 +216,9 @@ app.include_router(research_ext.router)
 app.include_router(international.router)
 app.include_router(altdata.router)
 app.include_router(fundamentals.router)
+app.include_router(futures.router)
+app.include_router(workspace.router)
+app.include_router(alerts.router)
 app.include_router(auth_router.router)
 
 

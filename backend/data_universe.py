@@ -2634,6 +2634,306 @@ UNIVERSE = {
 "name":"Li Auto",
 "sector":"Consumer Discretionary",
 "sub":"Automobile Manufacturers"
+},
+"DUOL":{
+"name":"Duolingo",
+"sector":"Communication Services",
+"sub":"Interactive Media & Services"
+},
+"RBLX":{
+"name":"Roblox",
+"sector":"Communication Services",
+"sub":"Interactive Home Entertainment"
+},
+"U":{
+"name":"Unity Software",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"PATH":{
+"name":"UiPath",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"S":{
+"name":"SentinelOne",
+"sector":"Information Technology",
+"sub":"Systems Software"
+},
+"OKTA":{
+"name":"Okta",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"TWLO":{
+"name":"Twilio",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"DOCU":{
+"name":"DocuSign",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"ZM":{
+"name":"Zoom Communications",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"PINS":{
+"name":"Pinterest",
+"sector":"Communication Services",
+"sub":"Interactive Media & Services"
+},
+"SNAP":{
+"name":"Snap Inc",
+"sector":"Communication Services",
+"sub":"Interactive Media & Services"
+},
+"LYFT":{
+"name":"Lyft",
+"sector":"Industrials",
+"sub":"Passenger Ground Transportation"
+},
+"ETSY":{
+"name":"Etsy",
+"sector":"Consumer Discretionary",
+"sub":"Broadline Retail"
+},
+"W":{
+"name":"Wayfair",
+"sector":"Consumer Discretionary",
+"sub":"Broadline Retail"
+},
+"CHWY":{
+"name":"Chewy",
+"sector":"Consumer Discretionary",
+"sub":"Broadline Retail"
+},
+"CART":{
+"name":"Instacart (Maplebear)",
+"sector":"Consumer Discretionary",
+"sub":"Broadline Retail"
+},
+"ONON":{
+"name":"On Holding",
+"sector":"Consumer Discretionary",
+"sub":"Footwear"
+},
+"DKNG":{
+"name":"DraftKings",
+"sector":"Consumer Discretionary",
+"sub":"Casinos & Gaming"
+},
+"PENN":{
+"name":"Penn Entertainment",
+"sector":"Consumer Discretionary",
+"sub":"Casinos & Gaming"
+},
+"MARA":{
+"name":"Marathon Digital Holdings",
+"sector":"Financials",
+"sub":"Specialized Finance"
+},
+"RIOT":{
+"name":"Riot Platforms",
+"sector":"Financials",
+"sub":"Specialized Finance"
+},
+"CLSK":{
+"name":"CleanSpark",
+"sector":"Financials",
+"sub":"Specialized Finance"
+},
+"IONQ":{
+"name":"IonQ",
+"sector":"Information Technology",
+"sub":"Technology Hardware"
+},
+"QBTS":{
+"name":"D-Wave Quantum",
+"sector":"Information Technology",
+"sub":"Technology Hardware"
+},
+"RGTI":{
+"name":"Rigetti Computing",
+"sector":"Information Technology",
+"sub":"Technology Hardware"
+},
+"ENPH":{
+"name":"Enphase Energy",
+"sector":"Industrials",
+"sub":"Electrical Equipment"
+},
+"SEDG":{
+"name":"SolarEdge Technologies",
+"sector":"Industrials",
+"sub":"Electrical Equipment"
+},
+"PLUG":{
+"name":"Plug Power",
+"sector":"Industrials",
+"sub":"Electrical Equipment"
+},
+"RUN":{
+"name":"Sunrun",
+"sector":"Utilities",
+"sub":"Renewable Electricity"
+},
+"CYBR":{
+"name":"CyberArk Software",
+"sector":"Information Technology",
+"sub":"Systems Software"
+},
+"GTLB":{
+"name":"GitLab",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"CFLT":{
+"name":"Confluent",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"HUBS":{
+"name":"HubSpot",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"BILL":{
+"name":"Bill.com Holdings",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"PAYC":{
+"name":"Paycom Software",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"PCTY":{
+"name":"Paylocity",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"TEAM":{
+"name":"Atlassian",
+"sector":"Information Technology",
+"sub":"Application Software"
+},
+"LSCC":{
+"name":"Lattice Semiconductor",
+"sector":"Information Technology",
+"sub":"Semiconductors"
+},
+"QRVO":{
+"name":"Qorvo",
+"sector":"Information Technology",
+"sub":"Semiconductors"
+},
+"SPOT":{
+"name":"Spotify Technology",
+"sector":"Communication Services",
+"sub":"Interactive Media & Services"
+},
+"RDDT":{
+"name":"Reddit",
+"sector":"Communication Services",
+"sub":"Interactive Media & Services"
+},
+"BMBL":{
+"name":"Bumble",
+"sector":"Communication Services",
+"sub":"Interactive Media & Services"
+},
+"AFRM":{
+"name":"Affirm Holdings",
+"sector":"Financials",
+"sub":"Consumer Finance"
+},
+"UPST":{
+"name":"Upstart Holdings",
+"sector":"Financials",
+"sub":"Consumer Finance"
+},
+"NU":{
+"name":"Nu Holdings",
+"sector":"Financials",
+"sub":"Consumer Finance"
+},
+"GME":{
+"name":"GameStop",
+"sector":"Consumer Discretionary",
+"sub":"Specialty Retail"
+},
+"AMC":{
+"name":"AMC Entertainment Holdings",
+"sector":"Communication Services",
+"sub":"Entertainment"
+},
+"BB":{
+"name":"BlackBerry",
+"sector":"Information Technology",
+"sub":"Software"
+},
+"TLRY":{
+"name":"Tilray Brands",
+"sector":"Health Care",
+"sub":"Pharmaceuticals"
+},
+"SIRI":{
+"name":"Sirius XM Holdings",
+"sector":"Communication Services",
+"sub":"Broadcasting"
+},
+"PARA":{
+"name":"Paramount Global",
+"sector":"Communication Services",
+"sub":"Entertainment"
+},
+"WING":{
+"name":"Wingstop",
+"sector":"Consumer Discretionary",
+"sub":"Restaurants"
+},
+"SG":{
+"name":"Sweetgreen",
+"sector":"Consumer Discretionary",
+"sub":"Restaurants"
+},
+"OSCR":{
+"name":"Oscar Health",
+"sector":"Health Care",
+"sub":"Managed Health Care"
+},
+"HIMS":{
+"name":"Hims & Hers Health",
+"sector":"Health Care",
+"sub":"Health Care Services"
+},
+"GH":{
+"name":"Guardant Health",
+"sector":"Health Care",
+"sub":"Life Sciences Tools & Services"
+},
+"EXAS":{
+"name":"Exact Sciences",
+"sector":"Health Care",
+"sub":"Life Sciences Tools & Services"
+},
+"ILMN":{
+"name":"Illumina",
+"sector":"Health Care",
+"sub":"Life Sciences Tools & Services"
+},
+"TDOC":{
+"name":"Teladoc Health",
+"sector":"Health Care",
+"sub":"Health Care Services"
+},
+"TXG":{
+"name":"10x Genomics",
+"sector":"Health Care",
+"sub":"Life Sciences Tools & Services"
 }
 }
 

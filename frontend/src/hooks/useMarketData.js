@@ -249,6 +249,41 @@ export const watchlistApi = {
   },
 }
 
+// ── Price alerts (in-app, WebSocket-delivered) ──
+export function useAlerts() {
+  return useFetch('/alerts/', 60_000)
+}
+export const alertsApi = {
+  async list() {
+    const r = await fetch(`${API}/alerts/`, { headers: authHeader() }); return r.json()
+  },
+  async create(symbol, condition, threshold) {
+    const r = await fetch(`${API}/alerts/`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ symbol, condition, threshold }),
+    }); return r.json()
+  },
+  async remove(id) {
+    const r = await fetch(`${API}/alerts/${id}`, { method: 'DELETE', headers: authHeader() }); return r.json()
+  },
+}
+
+// ── Multi-chart workspace (persisted per-user grid layout) ──
+export function useWorkspace() {
+  return useFetch('/workspace/', null)
+}
+export const workspaceApi = {
+  async get() {
+    const r = await fetch(`${API}/workspace/`, { headers: authHeader() }); return r.json()
+  },
+  async set(rows, cols, cells) {
+    const r = await fetch(`${API}/workspace/`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json', ...authHeader()},
+      body: JSON.stringify({ rows, cols, cells }),
+    }); return r.json()
+  },
+}
+
 // ── Credit ──
 export function useCreditDashboard() {
   return useFetch('/credit/dashboard', 600_000)
@@ -327,6 +362,17 @@ export function useCompanyTies(symbol) {
 // ── International markets ──
 export function useInternational() {
   return useFetch('/international/all', 60_000)
+}
+
+// ── Futures (yfinance quotes + CFTC COT positioning) ──
+export function useFuturesAll() {
+  return useFetch('/futures/all', 60_000)
+}
+export function useFuturesBars(symbol, days = 90) {
+  return useFetch(symbol ? `/futures/${encodeURIComponent(symbol)}/bars?days=${days}` : null, null)
+}
+export function useFuturesCOT(symbol, weeks = 26) {
+  return useFetch(symbol ? `/futures/${encodeURIComponent(symbol)}/cot?weeks=${weeks}` : null, null)
 }
 
 // ── Alt-data & events ──

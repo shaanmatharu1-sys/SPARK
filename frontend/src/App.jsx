@@ -31,6 +31,9 @@ import Portfolio       from './components/Portfolio/Portfolio'
 import Network         from './components/Network/Network'
 import Ties            from './components/Ties/Ties'
 import International    from './components/International/International'
+import Futures          from './components/Futures/Futures'
+import MultiChart        from './components/MultiChart/MultiChart'
+import NotificationBell  from './components/Alerts/NotificationBell'
 import AltData          from './components/AltData/AltData'
 import BacktestTab      from './components/Backtest/BacktestTab'
 import Arbitrage        from './components/Arbitrage/Arbitrage'
@@ -117,6 +120,8 @@ const TABS = [
   { id: 'research',  label: 'RESEARCH' },
   { id: 'markets',   label: 'MARKETS' },
   { id: 'world',     label: 'WORLD' },
+  { id: 'futures',   label: 'FUTURES' },
+  { id: 'multichart',label: 'MULTI' },
   { id: 'events',    label: 'EVENTS' },
   { id: 'altdata',   label: 'ALT-DATA' },
   { id: 'whales',    label: 'WHALES' },
@@ -297,6 +302,22 @@ function WorldLayout() {
   )
 }
 
+function FuturesLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <Futures />
+    </div>
+  )
+}
+
+function MultiChartLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <MultiChart />
+    </div>
+  )
+}
+
 function EventsLayout() {
   return (
     <div style={{ height: '100%' }}>
@@ -468,6 +489,7 @@ function AppInner() {
           >
             Watchlist
           </button>
+          <NotificationBell />
           <span className="dim" style={{ fontSize: 9 }}>CHART:</span>
           <SymbolSearch
             value={symbolInput}
@@ -494,6 +516,8 @@ function AppInner() {
         {activeTab === 'research' && <ResearchLayout />}
         {activeTab === 'markets'  && <MarketsLayout />}
         {activeTab === 'world'    && <WorldLayout />}
+        {activeTab === 'futures'  && <FuturesLayout />}
+        {activeTab === 'multichart' && <MultiChartLayout />}
         {activeTab === 'events'   && <EventsLayout />}
         {activeTab === 'altdata'  && <AltDataLayout />}
         {activeTab === 'whales'   && <WhalesLayout />}

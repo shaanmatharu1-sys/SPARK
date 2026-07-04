@@ -86,3 +86,5 @@ TTL_NEWS     = 300           # 5min
 TTL_FG       = 600           # 10min
 TTL_SECTORS  = 30
 TTL_UNUSUAL  = 60
+TTL_FUTURES  = 60            # yfinance quotes — futures move faster than intl indices
+TTL_COT      = 259200        # 3 days — CFTC COT report only updates weekly (Fridays)
