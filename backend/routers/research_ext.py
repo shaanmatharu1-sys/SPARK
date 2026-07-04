@@ -1,11 +1,13 @@
 """
 routers/research_ext.py — Credit data, options quant research, portfolio tracking
 """
-from fastapi import APIRouter, Query, Body
+from fastapi import APIRouter, Query, Body, Depends
 from pydantic import BaseModel
+from sqlalchemy import select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.fred_client import fetch_credit_dashboard
-from services.polygon_client import fetch_snapshot, fetch_options_chain, fetch_agg_bars
+from services.polygon_client import fetch_snapshot, fetch_options_snapshot, fetch_agg_bars
 from analytics.network.engine import build_network
 import datetime
 import asyncio
@@ -15,6 +17,9 @@ from analytics.options.engine import (
 )
 from analytics.portfolio.manual import compute_portfolio
 from cache.redis_client import cache_get, cache_set
+from auth import get_current_user
+from db import get_db
+from models import User, PortfolioHolding
 
 router = APIRouter(tags=["research_ext"])
 
@@ -117,20 +122,50 @@ async def options_payoff(req: PayoffRequest):
     return payoff_diagram(legs, req.spot)
 
 
+class CustomLeg(BaseModel):
+    type:    str    # call | put | stock
+    strike:  float
+    premium: float = 0
+    qty:     float = 1  # positive = long, negative = short
+
+
+class CustomPayoffRequest(BaseModel):
+    legs: list[CustomLeg]
+    spot: float
+
+
+@router.post("/options-research/payoff/custom")
+async def options_payoff_custom(req: CustomPayoffRequest):
+    """
+    Compute payoff diagram for an arbitrary user-built combination of legs,
+    bypassing the named-strategy templates in /options-research/payoff.
+    payoff_diagram() already accepts arbitrary legs — this just exposes that
+    directly over HTTP instead of only through build_strategy()'s 8 presets.
+    """
+    if not req.legs:
+        return {"error": "at least one leg is required"}
+    legs = [leg.dict() for leg in req.legs]
+    return payoff_diagram(legs, req.spot)
+
+
 @router.get("/options-research/iv-rank/{symbol}")
 async def options_iv_rank(symbol: str):
     """
     IV rank/percentile for a symbol. Pulls the option chain for current ATM IV,
     uses cached IV history (built up over time from scheduler runs).
     """
-    chain = await fetch_options_chain(symbol.upper())
+    # Note: uses the snapshot endpoint (fetch_options_snapshot), not the static
+    # reference endpoint (fetch_options_chain) — the reference endpoint has no
+    # implied_volatility/volume/open_interest fields at all, only the snapshot
+    # endpoint carries those.
+    chain = await fetch_options_snapshot(symbol.upper())
     snap = await fetch_snapshot([symbol.upper()])
     spot = (snap.get(symbol.upper(), {}).get("day", {}) or {}).get("c")
 
     # Find ATM IV from the chain
     atm_iv = None
     if chain and spot:
-        atm = min(chain, key=lambda c: abs(c.get("strike_price", 0) - spot), default=None)
+        atm = min(chain, key=lambda c: abs(c.get("details", {}).get("strike_price", 0) - spot), default=None)
         if atm:
             atm_iv = atm.get("implied_volatility")
 
@@ -153,13 +188,15 @@ async def options_iv_rank(symbol: str):
 @router.get("/options-research/flow/{symbol}")
 async def options_flow(symbol: str):
     """Put/call ratio and flow sentiment from the option chain."""
-    chain = await fetch_options_chain(symbol.upper())
+    # Snapshot endpoint, not the reference endpoint — see note in options_iv_rank above.
+    chain = await fetch_options_snapshot(symbol.upper())
     if not chain:
         return {"symbol": symbol.upper(), "error": "no option chain data"}
-    call_vol = sum(c.get("volume", 0) or 0 for c in chain if c.get("contract_type") == "call")
-    put_vol  = sum(c.get("volume", 0) or 0 for c in chain if c.get("contract_type") == "put")
-    call_oi  = sum(c.get("open_interest", 0) or 0 for c in chain if c.get("contract_type") == "call")
-    put_oi   = sum(c.get("open_interest", 0) or 0 for c in chain if c.get("contract_type") == "put")
+    def ctype(c): return c.get("details", {}).get("contract_type")
+    call_vol = sum((c.get("day", {}) or {}).get("volume", 0) or 0 for c in chain if ctype(c) == "call")
+    put_vol  = sum((c.get("day", {}) or {}).get("volume", 0) or 0 for c in chain if ctype(c) == "put")
+    call_oi  = sum(c.get("open_interest", 0) or 0 for c in chain if ctype(c) == "call")
+    put_oi   = sum(c.get("open_interest", 0) or 0 for c in chain if ctype(c) == "put")
     result = putcall_signal(call_vol, put_vol, call_oi, put_oi)
     result["symbol"] = symbol.upper()
     return result
@@ -168,16 +205,17 @@ async def options_flow(symbol: str):
 @router.get("/options-research/skew/{symbol}")
 async def options_skew(symbol: str):
     """Put/call vol skew from the option chain."""
-    chain = await fetch_options_chain(symbol.upper())
+    # Snapshot endpoint, not the reference endpoint — see note in options_iv_rank above.
+    chain = await fetch_options_snapshot(symbol.upper())
     snap = await fetch_snapshot([symbol.upper()])
     spot = (snap.get(symbol.upper(), {}).get("day", {}) or {}).get("c")
     if not chain or not spot:
         return {"symbol": symbol.upper(), "error": "insufficient data"}
     strikes_ivs = [
-        {"strike": c.get("strike_price"), "iv": c.get("implied_volatility"),
-         "type": c.get("contract_type")}
+        {"strike": c.get("details", {}).get("strike_price"), "iv": c.get("implied_volatility"),
+         "type": c.get("details", {}).get("contract_type")}
         for c in chain
-        if c.get("implied_volatility") and c.get("strike_price") and c.get("contract_type")
+        if c.get("implied_volatility") and c.get("details", {}).get("strike_price") and c.get("details", {}).get("contract_type")
     ]
     result = vol_skew(strikes_ivs, spot)
     result["symbol"] = symbol.upper()
@@ -186,9 +224,12 @@ async def options_skew(symbol: str):
 
 
 # ════════════════════════════════════════════════════════════════
-# PORTFOLIO (manual holdings)
+# PORTFOLIO (manual holdings, per-user)
 # ════════════════════════════════════════════════════════════════
-PF_KEY = "user:portfolio"
+# Note: "portfolio:last_prices" stays a global Redis cache keyed by symbol,
+# not by user — it's a market-data fallback (last known price for a symbol),
+# not private user data, so sharing it across users is correct and avoids
+# needless duplication.
 
 
 class Holding(BaseModel):
@@ -201,10 +242,17 @@ class PortfolioUpdate(BaseModel):
     holdings: list[Holding]
 
 
+async def _user_holdings(db: AsyncSession, user: User) -> list[dict]:
+    rows = (await db.scalars(
+        select(PortfolioHolding).where(PortfolioHolding.user_id == user.id)
+    )).all()
+    return [{"symbol": r.symbol, "shares": r.shares, "cost_basis": r.cost_basis} for r in rows]
+
+
 @router.get("/portfolio")
-async def get_portfolio():
-    """Current manual portfolio, marked to live prices."""
-    holdings = await cache_get(PF_KEY) or []
+async def get_portfolio(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Current user's manual portfolio, marked to live prices."""
+    holdings = await _user_holdings(db, current_user)
     if not holdings:
         return {"positions": [], "total_value": 0, "total_cost": 0,
                 "total_pnl": 0, "n_positions": 0, "empty": True}
@@ -240,28 +288,41 @@ async def get_portfolio():
 
 
 @router.put("/portfolio")
-async def set_portfolio(update: PortfolioUpdate):
-    """Replace the portfolio holdings."""
-    holdings = [h.dict() for h in update.holdings]
-    await cache_set(PF_KEY, holdings, ttl=86400 * 365)
-    return {"saved": True, "n": len(holdings)}
+async def set_portfolio(update: PortfolioUpdate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Replace the current user's portfolio holdings."""
+    await db.execute(delete(PortfolioHolding).where(PortfolioHolding.user_id == current_user.id))
+    for h in update.holdings:
+        db.add(PortfolioHolding(user_id=current_user.id, symbol=h.symbol.upper(),
+                                 shares=h.shares, cost_basis=h.cost_basis))
+    await db.commit()
+    return {"saved": True, "n": len(update.holdings)}
 
 
 @router.post("/portfolio/add")
-async def add_holding(holding: Holding):
-    """Add or update a single holding."""
-    holdings = await cache_get(PF_KEY) or []
+async def add_holding(holding: Holding, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Add or update a single holding for the current user."""
     sym = holding.symbol.upper()
-    holdings = [h for h in holdings if h["symbol"].upper() != sym]
-    holdings.append(holding.dict())
-    await cache_set(PF_KEY, holdings, ttl=86400 * 365)
+    existing = await db.scalar(
+        select(PortfolioHolding).where(
+            PortfolioHolding.user_id == current_user.id, PortfolioHolding.symbol == sym
+        )
+    )
+    if existing:
+        existing.shares = holding.shares
+        existing.cost_basis = holding.cost_basis
+    else:
+        db.add(PortfolioHolding(user_id=current_user.id, symbol=sym,
+                                 shares=holding.shares, cost_basis=holding.cost_basis))
+    await db.commit()
     return {"saved": True, "symbol": sym}
 
 
 @router.delete("/portfolio/{symbol}")
-async def remove_holding(symbol: str):
-    """Remove a holding."""
-    holdings = await cache_get(PF_KEY) or []
-    holdings = [h for h in holdings if h["symbol"].upper() != symbol.upper()]
-    await cache_set(PF_KEY, holdings, ttl=86400 * 365)
-    return {"saved": True, "removed": symbol.upper()}
+async def remove_holding(symbol: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Remove a holding for the current user."""
+    sym = symbol.upper()
+    await db.execute(delete(PortfolioHolding).where(
+        PortfolioHolding.user_id == current_user.id, PortfolioHolding.symbol == sym
+    ))
+    await db.commit()
+    return {"saved": True, "removed": sym}

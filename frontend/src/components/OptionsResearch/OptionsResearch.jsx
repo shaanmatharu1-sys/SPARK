@@ -3,12 +3,15 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useIVRank, useOptionsFlow, useOptionsSkew, optionsApi } from '../../hooks/useMarketData'
 import { useSymbol } from '../../hooks/useSymbol'
 
+const EMPTY_LEG = { type: 'call', strike: 100, premium: 4, qty: 1 }
+
 // ── Payoff modeler ──
 function PayoffModeler({ symbol }) {
   const [strategy, setStrategy] = useState('long_straddle')
   const [spot, setSpot] = useState(100)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [customLegs, setCustomLegs] = useState([{ ...EMPTY_LEG }])
 
   // Default params per strategy (simple, user can adjust spot)
   const defaultParams = {
@@ -24,10 +27,16 @@ function PayoffModeler({ symbol }) {
 
   const run = async () => {
     setLoading(true)
-    const r = await optionsApi.payoff(strategy, spot, defaultParams[strategy] || {})
+    const r = strategy === 'custom'
+      ? await optionsApi.payoffCustom(customLegs, spot)
+      : await optionsApi.payoff(strategy, spot, defaultParams[strategy] || {})
     setResult(r); setLoading(false)
   }
-  useEffect(() => { run() }, [strategy, spot])
+  useEffect(() => { run() }, [strategy, spot, strategy === 'custom' ? JSON.stringify(customLegs) : null])
+
+  const updateLeg = (i, patch) => setCustomLegs(legs => legs.map((l, j) => j === i ? { ...l, ...patch } : l))
+  const addLeg = () => setCustomLegs(legs => [...legs, { ...EMPTY_LEG }])
+  const removeLeg = (i) => setCustomLegs(legs => legs.filter((_, j) => j !== i))
 
   return (
     <div style={{ padding: 12 }}>
@@ -41,11 +50,39 @@ function PayoffModeler({ symbol }) {
           <option value="long_straddle">Long Straddle</option>
           <option value="long_strangle">Long Strangle</option>
           <option value="iron_condor">Iron Condor</option>
+          <option value="custom">Custom (build your own)</option>
         </select>
         <span className="dim" style={{ fontSize: 10 }}>SPOT:</span>
         <input className="input" style={{ width: 60 }} type="number" value={spot}
           onChange={e => setSpot(parseFloat(e.target.value) || 100)} />
       </div>
+
+      {strategy === 'custom' && (
+        <div style={{ marginBottom: 12 }}>
+          {customLegs.map((leg, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+              <select className="input" style={{ width: 70, fontSize: 11 }} value={leg.type}
+                onChange={e => updateLeg(i, { type: e.target.value })}>
+                <option value="call">Call</option>
+                <option value="put">Put</option>
+                <option value="stock">Stock</option>
+              </select>
+              <span className="dim" style={{ fontSize: 9 }}>STRIKE</span>
+              <input className="input" style={{ width: 60, fontSize: 11 }} type="number" value={leg.strike}
+                onChange={e => updateLeg(i, { strike: parseFloat(e.target.value) || 0 })} />
+              <span className="dim" style={{ fontSize: 9 }}>PREM</span>
+              <input className="input" style={{ width: 55, fontSize: 11 }} type="number" value={leg.premium}
+                onChange={e => updateLeg(i, { premium: parseFloat(e.target.value) || 0 })} />
+              <span className="dim" style={{ fontSize: 9 }}>QTY</span>
+              <input className="input" style={{ width: 50, fontSize: 11 }} type="number" value={leg.qty}
+                onChange={e => updateLeg(i, { qty: parseFloat(e.target.value) || 0 })} />
+              <span style={{ cursor: 'pointer', color: 'var(--text-dim)', fontSize: 12 }}
+                onClick={() => removeLeg(i)}>✕</span>
+            </div>
+          ))}
+          <button className="btn" style={{ fontSize: 10 }} onClick={addLeg}>+ Add leg</button>
+        </div>
+      )}
 
       {loading ? <div className="dim">Computing…</div> : result?.curve && (
         <>

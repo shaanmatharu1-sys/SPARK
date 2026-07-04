@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { API_BASE } from '../config'
+import { authHeader } from './useAuth'
 
 const API = API_BASE
 
@@ -11,7 +12,7 @@ export function useFetch(endpoint, intervalMs = null) {
   const fetch_ = useCallback(async () => {
     if (!endpoint) { setLoading(false); return }
     try {
-      const r = await fetch(`${API}${endpoint}`)
+      const r = await fetch(`${API}${endpoint}`, { headers: authHeader() })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       setData(await r.json())
       setError(null)
@@ -81,6 +82,30 @@ export function useOptionsSnapshot(symbol) {
   return useFetch(`/options/${symbol}/snapshot`, 10_000)
 }
 
+export function useOptionsChainFull(symbol, expiration) {
+  const qs = expiration ? `?expiration_date=${expiration}` : ''
+  return useFetch(symbol ? `/options/${symbol}/chain-full${qs}` : null, 15_000)
+}
+
+// ── Manual option positions / portfolio Greeks ──
+export function useOptionPositionsGreeks() {
+  return useFetch('/options/positions/greeks', 30_000)
+}
+export const optionPositionsApi = {
+  async list() {
+    const r = await fetch(`${API}/options/positions`, { headers: authHeader() }); return r.json()
+  },
+  async add(position) {
+    const r = await fetch(`${API}/options/positions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify(position),
+    }); return r.json()
+  },
+  async remove(id) {
+    const r = await fetch(`${API}/options/positions/${id}`, { method: 'DELETE', headers: authHeader() }); return r.json()
+  },
+}
+
 export function useSupplyChain() {
   return useFetch('/sentiment/supply-chain', 3600_000)
 }
@@ -117,21 +142,21 @@ export function useAlgoTemplates() {
 export const algoApi = {
   async create(body) {
     const r = await fetch(`${API}/algo/create`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify(body),
     })
     return r.json()
   },
   async run(id) {
-    const r = await fetch(`${API}/algo/${id}/run`, { method: 'POST' })
+    const r = await fetch(`${API}/algo/${id}/run`, { method: 'POST', headers: authHeader() })
     return r.json()
   },
   async reset(id) {
-    const r = await fetch(`${API}/algo/${id}/reset`, { method: 'POST' })
+    const r = await fetch(`${API}/algo/${id}/reset`, { method: 'POST', headers: authHeader() })
     return r.json()
   },
   async remove(id) {
-    const r = await fetch(`${API}/algo/${id}`, { method: 'DELETE' })
+    const r = await fetch(`${API}/algo/${id}`, { method: 'DELETE', headers: authHeader() })
     return r.json()
   },
 }
@@ -205,22 +230,22 @@ export function useYieldCurveExtended() {
 // ── Watchlist actions ──
 export const watchlistApi = {
   async get() {
-    const r = await fetch(`${API}/watchlist/`); return r.json()
+    const r = await fetch(`${API}/watchlist/`, { headers: authHeader() }); return r.json()
   },
   async set(symbols) {
     const r = await fetch(`${API}/watchlist/`, {
-      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      method: 'PUT', headers: {'Content-Type': 'application/json', ...authHeader()},
       body: JSON.stringify({ symbols }),
     }); return r.json()
   },
   async add(symbol) {
-    const r = await fetch(`${API}/watchlist/add/${symbol}`, { method: 'POST' }); return r.json()
+    const r = await fetch(`${API}/watchlist/add/${symbol}`, { method: 'POST', headers: authHeader() }); return r.json()
   },
   async remove(symbol) {
-    const r = await fetch(`${API}/watchlist/${symbol}`, { method: 'DELETE' }); return r.json()
+    const r = await fetch(`${API}/watchlist/${symbol}`, { method: 'DELETE', headers: authHeader() }); return r.json()
   },
   async reset() {
-    const r = await fetch(`${API}/watchlist/reset`, { method: 'POST' }); return r.json()
+    const r = await fetch(`${API}/watchlist/reset`, { method: 'POST', headers: authHeader() }); return r.json()
   },
 }
 
@@ -249,6 +274,12 @@ export const optionsApi = {
       body: JSON.stringify({ strategy, spot, params }),
     }); return r.json()
   },
+  async payoffCustom(legs, spot) {
+    const r = await fetch(`${API}/options-research/payoff/custom`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ legs, spot }),
+    }); return r.json()
+  },
 }
 
 // ── Portfolio (manual) ──
@@ -258,12 +289,12 @@ export function usePortfolio() {
 export const portfolioApi = {
   async add(symbol, shares, cost_basis) {
     const r = await fetch(`${API}/portfolio/add`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
+      method: 'POST', headers: {'Content-Type': 'application/json', ...authHeader()},
       body: JSON.stringify({ symbol, shares, cost_basis }),
     }); return r.json()
   },
   async remove(symbol) {
-    const r = await fetch(`${API}/portfolio/${symbol}`, { method: 'DELETE' }); return r.json()
+    const r = await fetch(`${API}/portfolio/${symbol}`, { method: 'DELETE', headers: authHeader() }); return r.json()
   },
 }
 

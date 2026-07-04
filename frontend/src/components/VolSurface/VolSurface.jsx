@@ -24,6 +24,19 @@ const EXP_COLORS = [
   'var(--red)', 'var(--cyan)', 'var(--gold-bright)',
 ]
 
+// Mirrors SectorHeatmap.jsx's heat-color-scale pattern: red = elevated/expensive
+// IV, green = cheap IV, relative to the min/max IV currently on the surface.
+function ivHeatColor(iv, min, max) {
+  if (iv == null || min === max) return 'transparent'
+  const t = (iv - min) / (max - min)
+  if (t > 0.83) return 'rgba(224,85,107,0.55)'
+  if (t > 0.66) return 'rgba(224,85,107,0.35)'
+  if (t > 0.5)  return 'rgba(224,85,107,0.18)'
+  if (t > 0.33) return 'rgba(63,182,139,0.18)'
+  if (t > 0.16) return 'rgba(63,182,139,0.35)'
+  return 'rgba(63,182,139,0.55)'
+}
+
 export default function VolSurface() {
   const { symbol, setSymbol } = useSymbol()
   const [input, setInput]   = useState(symbol)
@@ -46,6 +59,32 @@ export default function VolSurface() {
         color: EXP_COLORS[i % EXP_COLORS.length],
         points: pts.sort((a, b) => a.moneyness - b.moneyness),
       }))
+  }, [data])
+
+  // Strike x expiration IV grid — bucket by moneyness (rounded to nearest 0.05)
+  // since raw strikes differ per expiration, so cells align meaningfully across columns.
+  const heatmap = React.useMemo(() => {
+    if (!data?.surface_points?.length) return null
+    const expirations = [...new Set(data.surface_points.map(p => p.expiration))].sort().slice(0, 8)
+    const bucket = m => Math.round(m / 0.05) * 0.05
+    const rows = {}
+    for (const p of data.surface_points) {
+      if (!expirations.includes(p.expiration)) continue
+      const b = bucket(p.moneyness)
+      rows[b] ||= {}
+      const cell = rows[b][p.expiration]
+      if (cell) { cell.sum += p.iv; cell.n += 1 } else { rows[b][p.expiration] = { sum: p.iv, n: 1 } }
+    }
+    const moneynessBuckets = Object.keys(rows).map(Number).sort((a, b) => b - a)
+    let min = Infinity, max = -Infinity
+    for (const b of moneynessBuckets) {
+      for (const e of expirations) {
+        const c = rows[b][e]
+        if (c) { const v = c.sum / c.n; if (v < min) min = v; if (v > max) max = v }
+      }
+    }
+    if (!isFinite(min)) return null
+    return { expirations, moneynessBuckets, rows, min, max }
   }, [data])
 
   const termData = (data?.term_structure || [])
@@ -124,6 +163,48 @@ export default function VolSurface() {
                 </ScatterChart>
               </ResponsiveContainer>
             </div>
+
+            {/* IV surface heatmap: strike (moneyness) x expiration grid */}
+            {heatmap && (
+              <>
+                <div className="dim" style={{ fontSize: 9, margin: '8px 0 4px' }}>
+                  IV SURFACE — strike vs expiration (red = elevated IV, green = cheap IV)
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 9 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '2px 4px', color: 'var(--text-dim)' }}>MNY</th>
+                        {heatmap.expirations.map(e => (
+                          <th key={e} style={{ padding: '2px 4px', color: 'var(--text-dim)', fontWeight: 500 }}>
+                            {e.slice(5)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {heatmap.moneynessBuckets.map(b => (
+                        <tr key={b}>
+                          <td style={{ padding: '2px 4px', color: 'var(--text-dim)' }}>{b.toFixed(2)}</td>
+                          {heatmap.expirations.map(e => {
+                            const c = heatmap.rows[b][e]
+                            const iv = c ? c.sum / c.n : null
+                            return (
+                              <td key={e} style={{
+                                padding: '3px 4px', textAlign: 'center',
+                                background: ivHeatColor(iv, heatmap.min, heatmap.max),
+                              }}>
+                                {iv != null ? (iv * 100).toFixed(0) : '—'}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
 
             {/* Skew table */}
             {data.skew?.length > 0 && (

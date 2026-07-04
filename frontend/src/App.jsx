@@ -9,6 +9,8 @@ import SectorHeatmap  from './components/SectorHeatmap/SectorHeatmap'
 import NewsFeed       from './components/NewsFeed/NewsFeed'
 import UnusualActivity from './components/UnusualActivity/UnusualActivity'
 import OptionsFlow    from './components/OptionsFlow/OptionsFlow'
+import OptionsChain   from './components/OptionsChain/OptionsChain'
+import OptionsGreeksDashboard from './components/OptionsGreeks/OptionsGreeksDashboard'
 import Backtest       from './components/Backtest/Backtest'
 import Signals        from './components/Signals/Signals'
 import Factors        from './components/Factors/Factors'
@@ -32,12 +34,51 @@ import AltData          from './components/AltData/AltData'
 import BacktestTab      from './components/Backtest/BacktestTab'
 import Arbitrage        from './components/Arbitrage/Arbitrage'
 import { SymbolProvider, useSymbol } from './hooks/useSymbol'
+import { AuthProvider, useAuth } from './hooks/useAuth'
 import { useWatchlist } from './hooks/useMarketData'
+import LoginScreen from './components/Auth/LoginScreen'
+import { THEMES } from './themes'
 import Events           from './components/Events/Events'
 import SupplyMap       from './components/SupplyMap/SupplyMap'
 import PortWatch       from './components/SupplyMap/PortWatch'
 
 // ── Top bar clock ────────────────────────────────────────────────
+function UserMenu() {
+  const { user, logout, setTheme } = useAuth()
+  const [open, setOpen] = useState(false)
+  if (!user) return null
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button className="btn" style={{ fontSize: 11 }} onClick={() => setOpen(o => !o)}>
+        {user.username}
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 30, right: 0, zIndex: 100, width: 200,
+          background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+          borderRadius: 'var(--radius)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', padding: 10,
+        }}>
+          <div className="label" style={{ marginBottom: 6 }}>Theme</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+            {Object.entries(THEMES).map(([key, t]) => (
+              <button key={key} className={`btn ${user.theme === key ? 'active' : ''}`}
+                style={{ fontSize: 10, textAlign: 'left' }}
+                onClick={() => setTheme(key)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <button className="btn" style={{ width: '100%', fontSize: 11 }}
+            onClick={() => { setOpen(false); logout() }}>
+            Log out
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Clock() {
   const [time, setTime] = useState(new Date())
   useEffect(() => {
@@ -127,7 +168,7 @@ function OptionsLayout() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
+      gridTemplateColumns: '1fr 1fr 1.2fr',
       gridTemplateRows: '1fr 1fr',
       gap: 4,
       height: '100%',
@@ -135,6 +176,7 @@ function OptionsLayout() {
       <div style={{ gridColumn: '1', gridRow: '1 / 3' }}><OptionsFlow /></div>
       <div style={{ gridColumn: '2', gridRow: '1' }}><VolSurface /></div>
       <div style={{ gridColumn: '2', gridRow: '2' }}><UnusualActivity /></div>
+      <div style={{ gridColumn: '3', gridRow: '1 / 3' }}><OptionsChain /></div>
     </div>
   )
 }
@@ -207,8 +249,9 @@ function CreditLayout() {
 
 function PortfolioLayout() {
   return (
-    <div style={{ height: '100%' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, height: '100%' }}>
       <Portfolio />
+      <OptionsGreeksDashboard />
     </div>
   )
 }
@@ -317,6 +360,26 @@ function YieldLayout() {
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
   return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
+  )
+}
+
+function AuthGate() {
+  const { user, loading } = useAuth()
+  if (loading) {
+    return (
+      <div style={{
+        height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg-base)', color: 'var(--text-dim)', fontSize: 12,
+      }}>
+        Loading…
+      </div>
+    )
+  }
+  if (!user) return <LoginScreen />
+  return (
     <SymbolProvider initial="SPY">
       <AppInner />
     </SymbolProvider>
@@ -421,7 +484,8 @@ function AppInner() {
           )}
         </div>
 
-        <div style={{ flexShrink: 0 }}>
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <UserMenu />
           <Clock />
         </div>
       </div>

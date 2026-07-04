@@ -16,6 +16,8 @@ try:
 except ImportError:
     HAS_QUANT = False
 
+from analytics.indicators import sma as _sma, rsi as _rsi
+
 
 def _nan_to_zero(x):
     return 0.0 if x is None or (isinstance(x, float) and np.isnan(x)) else x
@@ -130,24 +132,6 @@ def run_strategy(name: str, prices: list[float], cost_bps: float = 1.0,
 #   {"indicator": "rsi"|"sma_ratio"|"zscore"|"momentum"|"price_vs_sma",
 #    "op": "<"|">"|"cross_above"|"cross_below", "value": float, "param": int}
 # Entry rules (ALL must hold) -> go long; exit rules (ANY) -> flat.
-
-def _sma(prices, w):
-    out = [float('nan')] * len(prices)
-    for i in range(w - 1, len(prices)):
-        out[i] = sum(prices[i - w + 1:i + 1]) / w
-    return out
-
-def _rsi(prices, w=14):
-    out = [float('nan')] * len(prices)
-    gains, losses = [], []
-    for i in range(1, len(prices)):
-        ch = prices[i] - prices[i - 1]
-        gains.append(max(ch, 0)); losses.append(max(-ch, 0))
-        if i >= w:
-            ag = sum(gains[-w:]) / w; al = sum(losses[-w:]) / w
-            rs = ag / al if al > 0 else 999
-            out[i] = 100 - 100 / (1 + rs)
-    return out
 
 def _zscore(prices, w=20):
     out = [float('nan')] * len(prices)

@@ -3,9 +3,16 @@ routers/algo.py — Algorithm framework + paper trading (NO real execution)
 
 Lets you create algorithms, run them against live data, and track a simulated
 portfolio. Nothing here connects to a broker or places real orders.
+
+Per-user: algo configs and their paper-portfolio state live in Postgres
+(source of truth) with Redis as a hot read-through cache in front of the
+portfolio snapshots — a cache eviction must not look like losing your
+simulated trade history.
 """
-from fastapi import APIRouter, Query, Body
+from fastapi import APIRouter, Query, Body, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 import time
 import datetime
@@ -17,11 +24,13 @@ from analytics.algo.engine import (
 from analytics.algo.portfolio import PaperPortfolio
 from services.polygon_client import fetch_agg_bars, fetch_snapshot
 from cache.redis_client import cache_get, cache_set, get_redis
+from auth import get_current_user
+from db import get_db
+from models import User, AlgoConfig as AlgoConfigRow, AlgoPortfolioSnapshot
 
 router = APIRouter(prefix="/algo", tags=["algo"])
 
-ALGO_KEY = "algo:configs"
-PF_KEY   = "algo:portfolio:"
+PF_CACHE_KEY = "algo:portfolio:"  # Redis hot-cache prefix; Postgres is the source of truth
 
 
 # ── Models ──────────────────────────────────────────────────────────
@@ -35,20 +44,38 @@ class CreateAlgo(BaseModel):
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
-async def _load_algos() -> dict:
-    return await cache_get(ALGO_KEY) or {}
+async def _get_owned_algo(db: AsyncSession, user: User, algo_id: str) -> AlgoConfigRow | None:
+    """Fetch an algo config, scoped to the current user — never trust algo_id alone."""
+    return await db.scalar(
+        select(AlgoConfigRow).where(AlgoConfigRow.id == algo_id, AlgoConfigRow.user_id == user.id)
+    )
 
-async def _save_algos(algos: dict):
-    await cache_set(ALGO_KEY, algos, ttl=86400 * 30)
 
-async def _load_portfolio(algo_id: str) -> PaperPortfolio:
-    data = await cache_get(PF_KEY + algo_id)
-    if data:
-        return PaperPortfolio.from_dict(data)
+async def _load_portfolio(db: AsyncSession, algo_id: str) -> PaperPortfolio:
+    cached = await cache_get(PF_CACHE_KEY + algo_id)
+    if cached:
+        return PaperPortfolio.from_dict(cached)
+    snap = await db.scalar(
+        select(AlgoPortfolioSnapshot).where(AlgoPortfolioSnapshot.algo_id == algo_id)
+    )
+    if snap:
+        await cache_set(PF_CACHE_KEY + algo_id, snap.state, ttl=86400 * 30)
+        return PaperPortfolio.from_dict(snap.state)
     return PaperPortfolio(name=algo_id)
 
-async def _save_portfolio(algo_id: str, pf: PaperPortfolio):
-    await cache_set(PF_KEY + algo_id, pf.to_dict(), ttl=86400 * 30)
+
+async def _save_portfolio(db: AsyncSession, algo_id: str, pf: PaperPortfolio):
+    state = pf.to_dict()
+    await cache_set(PF_CACHE_KEY + algo_id, state, ttl=86400 * 30)
+    snap = await db.scalar(
+        select(AlgoPortfolioSnapshot).where(AlgoPortfolioSnapshot.algo_id == algo_id)
+    )
+    if snap:
+        snap.state = state
+    else:
+        db.add(AlgoPortfolioSnapshot(algo_id=algo_id, state=state))
+    await db.commit()
+
 
 async def _price_history(symbols: list[str], days: int = 200) -> dict:
     today = datetime.date.today().isoformat()
@@ -85,24 +112,25 @@ async def get_templates():
 
 
 @router.get("/list")
-async def list_algos():
-    """All configured algos with their latest portfolio snapshot."""
-    algos = await _load_algos()
+async def list_algos(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """All of the current user's configured algos with their latest portfolio snapshot."""
+    rows = (await db.scalars(
+        select(AlgoConfigRow).where(AlgoConfigRow.user_id == current_user.id)
+    )).all()
     out = []
-    for aid, cfg in algos.items():
-        pf = await _load_portfolio(aid)
-        prices = await _current_prices(cfg["universe"])
+    for row in rows:
+        pf = await _load_portfolio(db, row.id)
+        prices = await _current_prices(row.config["universe"])
         out.append({
-            "config":    cfg,
+            "config":    row.config,
             "portfolio": pf.snapshot(prices),
         })
     return out
 
 
 @router.post("/create")
-async def create_algo(algo: CreateAlgo):
+async def create_algo(algo: CreateAlgo, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Create a new algorithm (does not run it — call /run)."""
-    algos = await _load_algos()
     aid = str(uuid.uuid4())[:8]
     cfg = AlgoConfig(
         algo_id=aid, name=algo.name, strategy=algo.strategy,
@@ -110,25 +138,26 @@ async def create_algo(algo: CreateAlgo):
         max_position_pct=algo.max_position_pct, params=algo.params,
     )
     from dataclasses import asdict
-    algos[aid] = asdict(cfg)
-    await _save_algos(algos)
+    cfg_dict = asdict(cfg)
+    db.add(AlgoConfigRow(id=aid, user_id=current_user.id, name=algo.name, config=cfg_dict))
+    await db.commit()
     # Initialize portfolio with the algo's capital
     pf = PaperPortfolio(name=aid, starting_cash=algo.capital)
-    await _save_portfolio(aid, pf)
-    return {"created": aid, "config": algos[aid]}
+    await _save_portfolio(db, aid, pf)
+    return {"created": aid, "config": cfg_dict}
 
 
 @router.post("/{algo_id}/run")
-async def run_algo(algo_id: str):
+async def run_algo(algo_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """
     Evaluate the algo against live data and apply simulated orders to its
     paper portfolio. This is a SIMULATION — no real orders are placed.
     """
-    algos = await _load_algos()
-    if algo_id not in algos:
+    row = await _get_owned_algo(db, current_user, algo_id)
+    if not row:
         return {"error": "algo not found"}
 
-    cfg = AlgoConfig(**algos[algo_id])
+    cfg = AlgoConfig(**row.config)
     history = await _price_history(cfg.universe)
     prices  = await _current_prices(cfg.universe)
 
@@ -137,7 +166,7 @@ async def run_algo(algo_id: str):
         return result
 
     # Apply target positions to the paper portfolio
-    pf = await _load_portfolio(algo_id)
+    pf = await _load_portfolio(db, algo_id)
     orders = []
     for sym, target_shares in result["targets"].items():
         px = prices.get(sym)
@@ -146,7 +175,7 @@ async def run_algo(algo_id: str):
         r = pf.target_position(sym, target_shares, px, strategy=cfg.strategy)
         if "filled" in r:
             orders.append(r["filled"])
-    await _save_portfolio(algo_id, pf)
+    await _save_portfolio(db, algo_id, pf)
 
     return {
         "algo_id":   algo_id,
@@ -159,35 +188,34 @@ async def run_algo(algo_id: str):
 
 
 @router.get("/{algo_id}")
-async def get_algo(algo_id: str):
+async def get_algo(algo_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Get one algo's config + portfolio snapshot."""
-    algos = await _load_algos()
-    if algo_id not in algos:
+    row = await _get_owned_algo(db, current_user, algo_id)
+    if not row:
         return {"error": "algo not found"}
-    cfg = algos[algo_id]
-    pf = await _load_portfolio(algo_id)
-    prices = await _current_prices(cfg["universe"])
-    return {"config": cfg, "portfolio": pf.snapshot(prices)}
+    pf = await _load_portfolio(db, algo_id)
+    prices = await _current_prices(row.config["universe"])
+    return {"config": row.config, "portfolio": pf.snapshot(prices)}
 
 
 @router.post("/{algo_id}/reset")
-async def reset_algo(algo_id: str):
+async def reset_algo(algo_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Reset an algo's paper portfolio to its starting capital."""
-    algos = await _load_algos()
-    if algo_id not in algos:
+    row = await _get_owned_algo(db, current_user, algo_id)
+    if not row:
         return {"error": "algo not found"}
-    pf = PaperPortfolio(name=algo_id, starting_cash=algos[algo_id]["capital"])
-    await _save_portfolio(algo_id, pf)
+    pf = PaperPortfolio(name=algo_id, starting_cash=row.config["capital"])
+    await _save_portfolio(db, algo_id, pf)
     return {"reset": algo_id}
 
 
 @router.delete("/{algo_id}")
-async def delete_algo(algo_id: str):
+async def delete_algo(algo_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Delete an algo and its portfolio."""
-    algos = await _load_algos()
-    if algo_id in algos:
-        del algos[algo_id]
-        await _save_algos(algos)
+    row = await _get_owned_algo(db, current_user, algo_id)
+    if row:
+        await db.delete(row)  # cascades to algo_portfolio_snapshots via FK
+        await db.commit()
         r = await get_redis()
-        await r.delete(PF_KEY + algo_id)
+        await r.delete(PF_CACHE_KEY + algo_id)
     return {"deleted": algo_id}

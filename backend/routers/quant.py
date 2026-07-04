@@ -6,6 +6,7 @@ from services.polygon_client import fetch_agg_bars
 from analytics.signals.engine import compute_signals
 from analytics.backtest.strategies import run_strategy, STRATEGY_META
 from analytics.backtest.strategies import run_custom, INDICATOR_META
+from analytics import indicators as ind
 from fastapi import Body
 import datetime
 
@@ -42,6 +43,53 @@ async def list_strategies():
 async def list_indicators():
     """GET /quant/indicators — Indicators available for build-your-own algo."""
     return INDICATOR_META
+
+
+@router.get("/indicators/{symbol}/series")
+async def indicator_series(
+    symbol:      str,
+    types:       str   = Query(default="sma"),  # comma-separated: sma,ema,rsi,macd,bbands
+    multiplier:  int   = Query(default=1),
+    timespan:    str   = Query(default="day"),
+    limit:       int   = Query(default=390),
+    sma_period:  int   = Query(default=20),
+    ema_period:  int   = Query(default=20),
+    rsi_period:  int   = Query(default=14),
+    macd_fast:   int   = Query(default=12),
+    macd_slow:   int   = Query(default=26),
+    macd_signal: int   = Query(default=9),
+    bbands_period: int = Query(default=20),
+    bbands_std:  float = Query(default=2.0),
+):
+    """
+    GET /quant/indicators/AAPL/series?types=sma,rsi,macd&multiplier=1&timespan=minute&limit=390
+    Time-aligned indicator series for charting — pass the SAME multiplier/timespan/limit
+    the chart used for /quotes/{symbol}/bars so timestamps line up exactly.
+    """
+    bars = await fetch_agg_bars(symbol.upper(), multiplier, timespan, None, None, limit)
+    closes = [b["c"] for b in bars if b.get("c") is not None]
+    times  = [b["t"] for b in bars if b.get("c") is not None]
+
+    def zip_series(values):
+        return [{"t": t, "v": (v if v == v else None)} for t, v in zip(times, values)]
+
+    out = {"symbol": symbol.upper(), "n": len(closes)}
+    requested = {t.strip() for t in types.split(",") if t.strip()}
+
+    if "sma" in requested:
+        out["sma"] = zip_series(ind.sma(closes, sma_period))
+    if "ema" in requested:
+        out["ema"] = zip_series(ind.ema(closes, ema_period))
+    if "rsi" in requested:
+        out["rsi"] = zip_series(ind.rsi(closes, rsi_period))
+    if "macd" in requested:
+        m = ind.macd(closes, macd_fast, macd_slow, macd_signal)
+        out["macd"] = {k: zip_series(v) for k, v in m.items()}
+    if "bbands" in requested:
+        bb = ind.bollinger_bands(closes, bbands_period, bbands_std)
+        out["bbands"] = {k: zip_series(v) for k, v in bb.items()}
+
+    return out
 
 
 @router.post("/backtest/{symbol}/custom")

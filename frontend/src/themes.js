@@ -1,0 +1,162 @@
+// themes.js — named color-token presets, applied by setting the same CSS
+// custom properties index.css already defines, so every component that
+// already reads var(--xxx) picks up a theme swap with zero component changes.
+//
+// Known limitation: canvas-drawn colors (lightweight-charts config in
+// PriceChart.jsx, Network/SupplyMap canvas fills) are hardcoded hex values
+// that mirror these vars by convention — they pick up a new theme on next
+// remount/symbol change, not live. Fixing that fully would mean re-deriving
+// every canvas color from JS on each theme change; deferred as out of scope
+// for v1.
+
+export const DEFAULT_THEME = 'midnight-brass'
+
+export const THEMES = {
+  'midnight-brass': {
+    label: 'Midnight & Brass',
+    vars: {
+      '--bg-base':        '#0B1929',
+      '--bg-panel':       '#0F2138',
+      '--bg-panel-2':     '#122845',
+      '--bg-raised':      '#16314F',
+      '--bg-header':      '#0A1726',
+      '--border':         '#1A3354',
+      '--border-soft':    '#15294310',
+      '--border-bright':  '#244873',
+      '--text-primary':   '#E8EAED',
+      '--text-secondary': '#9DB2C9',
+      '--text-dim':       '#5E789A',
+      '--text-faint':     '#3D5572',
+      '--gold':           '#C9A84C',
+      '--gold-bright':    '#E0C168',
+      '--gold-dim':       '#8A7536',
+      '--steel':          '#4A7BA6',
+      '--steel-bright':   '#6BA3D4',
+      '--green':          '#3FB68B',
+      '--green-dim':      '#1C4A3A',
+      '--red':            '#E0556B',
+      '--red-dim':        '#4A2028',
+      '--yellow':         '#C9A84C',
+      '--blue':           '#4A7BA6',
+      '--blue-bright':    '#6BA3D4',
+      '--purple':         '#9B8Bd4',
+      '--cyan':           '#5BB8C4',
+      '--border-accent':  '#244873',
+      '--bg-panel-hover': '#16314F',
+      '--text-label':     '#5E789A',
+    },
+  },
+
+  'amber-classic': {
+    label: 'Amber Classic',
+    vars: {
+      '--bg-base':        '#000000',
+      '--bg-panel':       '#0a0a0a',
+      '--bg-panel-2':     '#121212',
+      '--bg-raised':      '#1a1a1a',
+      '--bg-header':      '#000000',
+      '--border':         '#332200',
+      '--border-soft':    '#33220010',
+      '--border-bright':  '#664400',
+      '--text-primary':   '#ffb000',
+      '--text-secondary': '#cc8800',
+      '--text-dim':       '#8a5f00',
+      '--text-faint':     '#5c4000',
+      '--gold':           '#ffb000',
+      '--gold-bright':    '#ffcc44',
+      '--gold-dim':       '#995f00',
+      '--steel':          '#cc8800',
+      '--steel-bright':   '#ffcc44',
+      '--green':          '#4ade80',
+      '--green-dim':      '#1a3a24',
+      '--red':            '#f87171',
+      '--red-dim':        '#3a1a1a',
+      '--yellow':         '#ffb000',
+      '--blue':           '#cc8800',
+      '--blue-bright':    '#ffcc44',
+      '--purple':         '#cc8800',
+      '--cyan':           '#ffcc44',
+      '--border-accent':  '#664400',
+      '--bg-panel-hover': '#1a1a1a',
+      '--text-label':     '#8a5f00',
+    },
+  },
+
+  'cool-blue': {
+    label: 'Cool Blue',
+    vars: {
+      '--bg-base':        '#060b14',
+      '--bg-panel':       '#0a1220',
+      '--bg-panel-2':     '#0e1830',
+      '--bg-raised':      '#142240',
+      '--bg-header':      '#050a12',
+      '--border':         '#1c2e4a',
+      '--border-soft':    '#1c2e4a10',
+      '--border-bright':  '#2d4870',
+      '--text-primary':   '#c8d6e5',
+      '--text-secondary': '#8fa8c2',
+      '--text-dim':       '#5f7591',
+      '--text-faint':     '#3d4d61',
+      '--gold':           '#00d4ff',
+      '--gold-bright':    '#4ee3ff',
+      '--gold-dim':       '#0088a8',
+      '--steel':          '#3a8dde',
+      '--steel-bright':   '#5fb0f5',
+      '--green':          '#3FB68B',
+      '--green-dim':      '#1C4A3A',
+      '--red':            '#E0556B',
+      '--red-dim':        '#4A2028',
+      '--yellow':         '#00d4ff',
+      '--blue':           '#3a8dde',
+      '--blue-bright':    '#5fb0f5',
+      '--purple':         '#8b7fd4',
+      '--cyan':           '#00d4ff',
+      '--border-accent':  '#2d4870',
+      '--bg-panel-hover': '#142240',
+      '--text-label':     '#5f7591',
+    },
+  },
+
+  'monochrome-slate': {
+    label: 'Monochrome Slate',
+    vars: {
+      '--bg-base':        '#14161a',
+      '--bg-panel':       '#181b20',
+      '--bg-panel-2':     '#1e2228',
+      '--bg-raised':      '#262b33',
+      '--bg-header':      '#101216',
+      '--border':         '#2a2e36',
+      '--border-soft':    '#2a2e3610',
+      '--border-bright':  '#3d434d',
+      '--text-primary':   '#d4d4d8',
+      '--text-secondary': '#9a9aa2',
+      '--text-dim':       '#6b6b74',
+      '--text-faint':     '#48484f',
+      '--gold':           '#9b7fd4',
+      '--gold-bright':    '#b79cf0',
+      '--gold-dim':       '#6b4fa0',
+      '--steel':          '#7a7a85',
+      '--steel-bright':   '#9a9aa5',
+      '--green':          '#3FB68B',
+      '--green-dim':      '#1C4A3A',
+      '--red':            '#E0556B',
+      '--red-dim':        '#4A2028',
+      '--yellow':         '#9b7fd4',
+      '--blue':           '#7a7a85',
+      '--blue-bright':    '#9a9aa5',
+      '--purple':         '#9b7fd4',
+      '--cyan':           '#9a9aa5',
+      '--border-accent':  '#3d434d',
+      '--bg-panel-hover': '#262b33',
+      '--text-label':     '#6b6b74',
+    },
+  },
+}
+
+export function applyTheme(name) {
+  const theme = THEMES[name] || THEMES[DEFAULT_THEME]
+  const root = document.documentElement.style
+  for (const [key, value] of Object.entries(theme.vars)) {
+    root.setProperty(key, value)
+  }
+}

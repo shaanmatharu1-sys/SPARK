@@ -22,6 +22,15 @@ NEWS_API_KEY     = os.getenv("NEWS_API_KEY", "")
 # ── Redis ───────────────────────────────────────────────────────
 REDIS_URL        = os.getenv("REDIS_URL", "redis://localhost:6379")
 
+# ── Database (durable per-user data — accounts, watchlists, portfolios) ──
+DATABASE_URL     = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
+
+# ── Auth ────────────────────────────────────────────────────────
+JWT_SECRET          = os.getenv("JWT_SECRET", "")
+JWT_ALGORITHM       = "HS256"
+JWT_EXPIRE_DAYS      = 30
+SIGNUP_INVITE_CODE  = os.getenv("SIGNUP_INVITE_CODE", "")
+
 # ── App ─────────────────────────────────────────────────────────
 ENV              = os.getenv("ENV", "development")
 CORS_ORIGINS     = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")

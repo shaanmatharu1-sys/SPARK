@@ -18,7 +18,7 @@ from config import CORS_ORIGINS, DEFAULT_WATCHLIST, SECTOR_ETFS
 from cache.redis_client import ping as redis_ping
 
 # ── Routers ──────────────────────────────────────────────────────────────────
-from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata, fundamentals
+from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata, fundamentals, auth as auth_router
 
 # ── Background WS feeds ──────────────────────────────────────────────────────
 from services.polygon_client import PolygonStocksWS, PolygonOptionsWS
@@ -92,6 +92,17 @@ async def lifespan(app: FastAPI):
         logger.info("[Redis] Connected")
     else:
         logger.warning("[Redis] Not reachable — caching disabled")
+
+    # Database health check (schema itself is managed by `alembic upgrade head`
+    # as a separate deploy step, not created here — see backend/alembic/)
+    from sqlalchemy import text
+    from db import engine as db_engine
+    try:
+        async with db_engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("[DB] Connected")
+    except Exception as e:
+        logger.warning(f"[DB] Not reachable — auth/per-user data will fail: {e}")
 
     # Warm up caches on startup
     logger.info("[Startup] Pre-warming caches...")
@@ -170,6 +181,7 @@ app.include_router(research_ext.router)
 app.include_router(international.router)
 app.include_router(altdata.router)
 app.include_router(fundamentals.router)
+app.include_router(auth_router.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
