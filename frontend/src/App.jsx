@@ -24,6 +24,7 @@ import CompanyDetail  from './components/Markets/CompanyDetail'
 import Traders        from './components/Traders/Traders'
 import YieldCurvePanel from './components/YieldCurve/YieldCurvePanel'
 import WatchlistManager from './components/Watchlist/WatchlistManager'
+import SymbolSearch from './components/common/SymbolSearch'
 import Credit          from './components/Credit/Credit'
 import OptionsResearch from './components/OptionsResearch/OptionsResearch'
 import Portfolio       from './components/Portfolio/Portfolio'
@@ -468,16 +469,11 @@ function AppInner() {
             Watchlist
           </button>
           <span className="dim" style={{ fontSize: 9 }}>CHART:</span>
-          <input
-            className="input"
+          <SymbolSearch
             value={symbolInput}
-            onChange={e => setSymbolInput(e.target.value.toUpperCase())}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                setChartSymbol(symbolInput)
-              }
-            }}
-            style={{ width: 70 }}
+            onChange={setSymbolInput}
+            onSelect={(sym) => { setSymbolInput(sym); setChartSymbol(sym) }}
+            width={90}
           />
           {showWatchlist && (
             <WatchlistManager onClose={() => setShowWatchlist(false)} onChange={refreshWatchlist} />

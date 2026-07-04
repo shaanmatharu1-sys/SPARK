@@ -234,9 +234,32 @@ async def fetch_insider_trades(ticker: str, limit: int = 30) -> dict:
 
 
 # ── 2. Congressional trades (community dataset) ─────────────────────────────
-# House & Senate stock-watcher publish aggregated disclosures as JSON.
-HOUSE_URL  = "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json"
+# House & Senate stock-watcher used to publish aggregated disclosures as JSON
+# on these S3 buckets; both now return 403 AccessDenied (the original project
+# appears to have made them private / gone dark). For House, fall back to an
+# actively-maintained GitHub mirror with the same JSON schema. No equivalent
+# live mirror exists for Senate at time of writing — efdsearch.senate.gov has
+# no public JSON API, so Senate degrades gracefully instead of guessing.
+HOUSE_URLS = [
+    "https://raw.githubusercontent.com/TattooedHead/house-stock-watcher-data/main/data/all_transactions.json",
+    "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json",
+]
 SENATE_URL = "https://senate-stock-watcher-data.s3-us-west-2.amazonaws.com/aggregate/all_transactions.json"
+
+
+async def _fetch_json_first_ok(session: aiohttp.ClientSession, urls: list[str]):
+    """Try each URL in order, returning the first that responds 200 with JSON."""
+    last_status = None
+    for url in urls:
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=20)) as r:
+                if r.status != 200:
+                    last_status = r.status
+                    continue
+                return await r.json(content_type=None), None
+        except Exception as e:
+            last_status = str(e)
+    return None, last_status
 
 
 async def fetch_congress_trades(chamber: str = "house", limit: int = 50,
@@ -244,36 +267,43 @@ async def fetch_congress_trades(chamber: str = "house", limit: int = 50,
     """
     Recent congressional stock transactions.
     chamber: 'house' | 'senate'. Optionally filter by ticker.
-    NOTE: relies on the community stock-watcher datasets.
+    NOTE: relies on community-maintained datasets (see HOUSE_URLS/SENATE_URL above).
     """
     cache_key = f"congress:{chamber}:{ticker or 'all'}:{limit}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
 
-    url = SENATE_URL if chamber == "senate" else HOUSE_URL
-    try:
-        async with aiohttp.ClientSession(headers=HEADERS) as s:
-            async with s.get(url, timeout=aiohttp.ClientTimeout(total=20)) as r:
-                if r.status != 200:
-                    return {"error": f"source returned {r.status}", "chamber": chamber,
-                            "trades": [], "note": "Congress data source unavailable."}
-                data = await r.json(content_type=None)
-    except Exception as e:
-        logger.warning(f"[Congress] {chamber}: {e}")
-        return {"error": str(e), "chamber": chamber, "trades": [],
-                "note": "Congress data depends on a community dataset; may be unavailable."}
+    async with aiohttp.ClientSession(headers=HEADERS) as s:
+        if chamber == "senate":
+            data, err = await _fetch_json_first_ok(s, [SENATE_URL])
+        else:
+            data, err = await _fetch_json_first_ok(s, HOUSE_URLS)
 
-    # Normalize fields (house vs senate schemas differ slightly)
+    if data is None:
+        note = ("Senate stock-watcher's data source has been taken offline upstream; "
+                 "no public replacement exists yet. House data is unaffected."
+                 if chamber == "senate" else
+                 "Congress data source unavailable.")
+        return {"error": f"source unavailable ({err})", "chamber": chamber,
+                "trades": [], "note": note}
+
+    # Normalize fields (house vs senate schemas differ slightly). The upstream
+    # scraper occasionally leaves null-byte padding in PDF-extracted text
+    # (e.g. "Common Stock F\x00\x00\x00 S\x00...") — strip control chars so
+    # the UI never renders garbage.
+    def _clean(s):
+        return "".join(ch for ch in str(s) if ch.isprintable()).strip() if s else s
+
     trades = []
     for t in (data if isinstance(data, list) else [])[:5000]:
         sym = (t.get("ticker") or "").upper()
         if ticker and sym != ticker.upper():
             continue
         trades.append({
-            "representative": t.get("representative") or t.get("senator") or "Unknown",
+            "representative": _clean(t.get("representative") or t.get("senator") or "Unknown"),
             "ticker":         sym if sym and sym != "--" else None,
-            "asset":          t.get("asset_description", ""),
+            "asset":          _clean(t.get("asset_description", "")),
             "type":           t.get("type", ""),       # purchase / sale
             "amount":         t.get("amount", ""),
             "date":           t.get("transaction_date") or t.get("disclosure_date"),

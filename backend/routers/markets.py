@@ -3,12 +3,21 @@ routers/markets.py — Movers, crypto, earnings, SEC filings, social sentiment
 """
 from fastapi import APIRouter, Query
 from services.polygon_client import (
-    fetch_movers, fetch_crypto_snapshot, fetch_crypto_bars, fetch_earnings,
+    fetch_movers, fetch_crypto_snapshot, fetch_crypto_bars, fetch_earnings, search_tickers,
 )
 from services.filings_client import fetch_filings, fetch_filings_by_type
 from services.sentiment_social import fetch_social_sentiment
 
 router = APIRouter(prefix="/markets", tags=["markets"])
+
+
+@router.get("/search")
+async def search_symbols(q: str = Query(..., min_length=1), limit: int = Query(default=15)):
+    """
+    Search the full market (not just the curated S&P watchlist universe) by
+    ticker or company name — powers the global symbol search/autocomplete.
+    """
+    return {"results": await search_tickers(q, limit)}
 
 
 @router.get("/movers")

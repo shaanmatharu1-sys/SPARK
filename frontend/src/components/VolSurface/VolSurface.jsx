@@ -5,6 +5,7 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer, ZAxis, Legend
 } from 'recharts'
 import { useVolSurface } from '../../hooks/useMarketData'
+import Surface3D from './Surface3D'
 
 function Metric({ label, value, color }) {
   return (
@@ -164,11 +165,21 @@ export default function VolSurface() {
               </ResponsiveContainer>
             </div>
 
+            {/* True 3D IV surface: moneyness x time-to-expiry x IV, interpolated mesh */}
+            {data.surface_points?.length > 3 && (
+              <>
+                <div className="dim" style={{ fontSize: 9, margin: '8px 0 4px' }}>
+                  3D IV SURFACE — drag to rotate, scroll to zoom (blue = cheap, red = elevated)
+                </div>
+                <Surface3D points={data.surface_points} />
+              </>
+            )}
+
             {/* IV surface heatmap: strike (moneyness) x expiration grid */}
             {heatmap && (
               <>
                 <div className="dim" style={{ fontSize: 9, margin: '8px 0 4px' }}>
-                  IV SURFACE — strike vs expiration (red = elevated IV, green = cheap IV)
+                  IV SURFACE (TABLE) — strike vs expiration (red = elevated IV, green = cheap IV)
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 9 }}>

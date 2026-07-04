@@ -347,7 +347,7 @@ export function useIndicators() {
   return useFetch('/quant/indicators', null)
 }
 export function useETFArb() {
-  return useFetch('/research/arbitrage/etf', 30_000)
+  return useFetch('/arbitrage/etf', 30_000)
 }
 export async function runCustomBacktest(symbol, entry, exit, days = 730, costBps = 1.0) {
   const r = await fetch(`${API}/quant/backtest/${symbol}/custom?days=${days}&cost_bps=${costBps}`, {
@@ -359,4 +359,15 @@ export async function runCustomBacktest(symbol, entry, exit, days = 730, costBps
 export async function runPresetBacktest(symbol, strategy, days = 730, costBps = 1.0) {
   const r = await fetch(`${API}/quant/backtest/${symbol}?strategy=${strategy}&days=${days}&cost_bps=${costBps}`)
   return r.json()
+}
+
+// ── Full-market symbol search (not just the curated S&P universe) ──
+export async function searchSymbols(query, limit = 12) {
+  if (!query?.trim()) return []
+  const r = await fetch(`${API}/markets/search?q=${encodeURIComponent(query)}&limit=${limit}`, {
+    headers: authHeader(),
+  })
+  if (!r.ok) return []
+  const data = await r.json()
+  return data.results || []
 }

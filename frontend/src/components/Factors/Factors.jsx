@@ -1,4 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+} from 'recharts'
 import { useFactorRankings } from '../../hooks/useMarketData'
 
 const FACTOR_LABELS = {
@@ -36,6 +39,9 @@ export default function Factors() {
   const { data, loading, error } = useFactorRankings(universe, days)
 
   const factorNames = data?.factor_names || []
+  const chartData = useMemo(() => (
+    (data?.rankings || []).slice().sort((a, b) => b.composite - a.composite)
+  ), [data])
 
   return (
     <div className="panel" style={{ height: '100%' }}>
@@ -56,6 +62,28 @@ export default function Factors() {
         {loading && <div style={{ padding: 16, color: 'var(--text-dim)' }}>Computing factor exposures across universe...</div>}
         {error && <div style={{ padding: 16, color: 'var(--red)' }}>Error: {error}</div>}
         {data?.error && <div style={{ padding: 16, color: 'var(--red)' }}>{data.error}</div>}
+
+        {chartData.length > 0 && (
+          <div style={{ height: Math.min(280, Math.max(120, chartData.length * 16)), padding: '8px 10px 0' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} layout="vertical" margin={{ top: 2, right: 24, left: 0, bottom: 2 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                <XAxis type="number" tick={{ fill: 'var(--text-dim)', fontSize: 8 }}
+                       axisLine={{ stroke: 'var(--border-bright)' }} />
+                <YAxis type="category" dataKey="symbol" width={44}
+                       tick={{ fill: 'var(--text-dim)', fontSize: 9 }} axisLine={{ stroke: 'var(--border-bright)' }} />
+                <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                         borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                         formatter={(v) => v.toFixed(3)} labelFormatter={(l) => `${l} composite`} />
+                <Bar dataKey="composite">
+                  {chartData.map(r => (
+                    <Cell key={r.symbol} fill={r.composite >= 0 ? 'var(--green)' : 'var(--red)'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
         {data?.rankings && (
           <table className="bbg-table">

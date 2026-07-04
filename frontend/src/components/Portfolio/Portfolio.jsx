@@ -1,5 +1,13 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
+import {
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts'
 import { usePortfolio, portfolioApi } from '../../hooks/useMarketData'
+
+const PIE_COLORS = [
+  'var(--gold)', 'var(--steel-bright)', 'var(--green)', 'var(--purple)',
+  'var(--red)', 'var(--cyan)', 'var(--gold-bright)', 'var(--blue-bright)',
+]
 
 export default function Portfolio() {
   const { data, loading, refresh } = usePortfolio()
@@ -18,6 +26,15 @@ export default function Portfolio() {
   const remove = async (s) => { await portfolioApi.remove(s); setTimeout(refresh, 200) }
 
   const pnlColor = (v) => v == null ? 'var(--text-dim)' : v >= 0 ? 'var(--green)' : 'var(--red)'
+
+  const positions = data?.positions || []
+  const pieData = useMemo(() => (
+    positions.filter(p => p.market_value != null).map(p => ({ name: p.symbol, value: p.market_value }))
+  ), [positions])
+  const pnlBars = useMemo(() => (
+    positions.filter(p => p.unrealized_pnl != null)
+      .slice().sort((a, b) => b.unrealized_pnl - a.unrealized_pnl)
+  ), [positions])
 
   return (
     <div className="panel" style={{ height: '100%' }}>
@@ -53,7 +70,48 @@ export default function Portfolio() {
             <div style={{ fontSize: 11 }}>Add a position above to start tracking your portfolio.</div>
           </div>
         ) : (
-          <table className="bbg-table">
+          <>
+            <div style={{ display: 'flex', gap: 8, padding: '8px 10px 0', flexWrap: 'wrap' }}>
+              {pieData.length > 0 && (
+                <div style={{ flex: '1 1 220px', height: 160 }}>
+                  <div className="dim" style={{ fontSize: 9, marginBottom: 2 }}>ALLOCATION BY MARKET VALUE</div>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                           innerRadius={30} outerRadius={55} paddingAngle={2}>
+                        {pieData.map((p, i) => <Cell key={p.name} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                               borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                               formatter={(v) => `$${v.toLocaleString()}`} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+              {pnlBars.length > 0 && (
+                <div style={{ flex: '1 1 260px', height: 160 }}>
+                  <div className="dim" style={{ fontSize: 9, marginBottom: 2 }}>UNREALIZED P&L BY POSITION</div>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={pnlBars} layout="vertical" margin={{ top: 2, right: 16, left: 0, bottom: 2 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                      <XAxis type="number" tick={{ fill: 'var(--text-dim)', fontSize: 8 }}
+                             axisLine={{ stroke: 'var(--border-bright)' }} />
+                      <YAxis type="category" dataKey="symbol" width={44}
+                             tick={{ fill: 'var(--text-dim)', fontSize: 9 }} axisLine={{ stroke: 'var(--border-bright)' }} />
+                      <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                               borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                               formatter={(v) => `$${v.toLocaleString()}`} />
+                      <Bar dataKey="unrealized_pnl">
+                        {pnlBars.map(p => (
+                          <Cell key={p.symbol} fill={p.unrealized_pnl >= 0 ? 'var(--green)' : 'var(--red)'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+            <table className="bbg-table">
             <thead>
               <tr><th>SYMBOL</th><th>SHARES</th><th>COST</th><th>LAST</th><th>MKT VAL</th><th>P&L</th><th>WT%</th><th></th></tr>
             </thead>
@@ -75,7 +133,8 @@ export default function Portfolio() {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </>
         )}
       </div>
     </div>

@@ -1,5 +1,9 @@
-import React, { useRef, useEffect } from 'react'
-import { useInternational } from '../../hooks/useMarketData'
+import React, { useRef, useEffect, useState, useMemo } from 'react'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  LineChart, Line,
+} from 'recharts'
+import { useInternational, useBars } from '../../hooks/useMarketData'
 import { WORLD_LAND } from '../SupplyMap/worldGeo'
 
 const chgColor = (p) => p == null ? 'var(--text-dim)' : p > 0 ? 'var(--green)' : p < 0 ? 'var(--red)' : 'var(--text)'
@@ -87,12 +91,21 @@ function WorldPerfMap({ etfs }) {
   return <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block', borderRadius: 4 }} />
 }
 
-function Row({ left, sub, right, rightColor }) {
+function Row({ left, sub, right, rightColor, onClick, active }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '4px 6px', margin: '0 -6px', borderRadius: 3,
+        borderBottom: '1px solid var(--border)',
+        cursor: onClick ? 'pointer' : 'default',
+        background: active ? 'var(--bg-raised)' : 'transparent',
+      }}
+    >
       <div style={{ minWidth: 0 }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text)' }}>{left}</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12,
+                       color: active ? 'var(--gold-bright)' : 'var(--text)' }}>{left}</span>
         {sub && <span className="dim" style={{ fontSize: 10, marginLeft: 6 }}>{sub}</span>}
       </div>
       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: rightColor }}>{right}</span>
@@ -100,14 +113,88 @@ function Row({ left, sub, right, rightColor }) {
   )
 }
 
+// Ranks every country/region ETF by today's move — the "who's winning today"
+// view that a flat list can't give you at a glance.
+function RegionalPerfBar({ etfs, onPick, selected }) {
+  const ranked = useMemo(() => (
+    etfs.filter(e => e.change_pct != null)
+      .slice().sort((a, b) => b.change_pct - a.change_pct)
+  ), [etfs])
+  if (!ranked.length) return null
+  return (
+    <div style={{ height: 150, marginBottom: 6 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={ranked} layout="vertical" margin={{ top: 2, right: 24, left: 0, bottom: 2 }}
+                  onClick={(s) => s?.activePayload?.[0] && onPick(s.activePayload[0].payload.symbol)}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+          <XAxis type="number" tick={{ fill: 'var(--text-dim)', fontSize: 8 }}
+                 axisLine={{ stroke: 'var(--border-bright)' }} tickFormatter={v => `${v}%`} />
+          <YAxis type="category" dataKey="name" width={72}
+                 tick={{ fill: 'var(--text-dim)', fontSize: 8 }} axisLine={{ stroke: 'var(--border-bright)' }} />
+          <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                   borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                   formatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`}
+                   labelFormatter={(_, p) => p?.[0]?.payload?.symbol} />
+          <Bar dataKey="change_pct" cursor="pointer">
+            {ranked.map(e => (
+              <Cell key={e.symbol}
+                    fill={e.symbol === selected ? 'var(--gold-bright)'
+                         : e.change_pct >= 0 ? 'var(--green)' : 'var(--red)'} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+// Drill-down: 3-month daily price history for whichever country ETF is selected.
+function CountryDetail({ symbol, name }) {
+  const { data: bars, loading } = useBars(symbol, 1, 'day', 90)
+  const chartData = useMemo(() => (bars || []).map(b => ({
+    t: new Date(b.t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    c: b.c,
+  })), [bars])
+
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gold-bright)', marginBottom: 4 }}>
+        {symbol} — {name} — 3M
+      </div>
+      <div style={{ height: 110 }}>
+        {loading ? <div className="dim" style={{ fontSize: 11 }}>Loading…</div> : (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="t" tick={{ fill: 'var(--text-dim)', fontSize: 7 }}
+                     axisLine={{ stroke: 'var(--border-bright)' }} interval={Math.ceil(chartData.length / 6)} />
+              <YAxis domain={['auto', 'auto']} tick={{ fill: 'var(--text-dim)', fontSize: 8 }}
+                     axisLine={{ stroke: 'var(--border-bright)' }} width={44} />
+              <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                       borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }} />
+              <Line type="monotone" dataKey="c" stroke="var(--steel-bright)" strokeWidth={1.5} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function International() {
   const { data, loading } = useInternational()
+  const [selected, setSelected] = useState(null) // { symbol, name }
 
   const indices = data?.indices?.indices || []
   const indicesAvail = data?.indices?.available !== false
   const etfs = data?.etfs?.etfs || []
   const adrs = data?.adrs?.adrs || []
   const fx = data?.fx?.fx || []
+
+  const pick = (symbol) => {
+    const e = etfs.find(x => x.symbol === symbol)
+    if (e) setSelected({ symbol: e.symbol, name: e.name })
+  }
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr',
@@ -131,14 +218,21 @@ export default function International() {
         </div>
       </div>
 
-      {/* Country ETFs */}
+      {/* Country ETFs — ranked performance bar + drill-down + list */}
       <div className="panel" style={{ minHeight: 0 }}>
-        <div className="panel-header"><span className="title">Country / Region ETFs</span></div>
-        <div className="panel-body" style={{ padding: '4px 12px' }}>
+        <div className="panel-header">
+          <span className="title">Country / Region ETFs</span>
+          <span className="dim" style={{ fontSize: 9 }}>click to chart</span>
+        </div>
+        <div className="panel-body" style={{ padding: '4px 12px', overflowY: 'auto' }}>
           {loading && <div className="dim" style={{ fontSize: 11 }}>Loading…</div>}
+          <RegionalPerfBar etfs={etfs} onPick={pick} selected={selected?.symbol} />
+          {selected && <CountryDetail symbol={selected.symbol} name={selected.name} />}
           {etfs.map(e => (
             <Row key={e.symbol} left={e.symbol} sub={e.name}
-                 right={fmtPct(e.change_pct)} rightColor={chgColor(e.change_pct)} />
+                 right={fmtPct(e.change_pct)} rightColor={chgColor(e.change_pct)}
+                 active={selected?.symbol === e.symbol}
+                 onClick={() => pick(e.symbol)} />
           ))}
         </div>
       </div>
@@ -155,7 +249,8 @@ export default function International() {
           <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gold-bright)', margin: '8px 0 4px' }}>ADRs</div>
           {adrs.map(a => (
             <Row key={a.symbol} left={a.symbol} sub={a.country}
-                 right={fmtPct(a.change_pct)} rightColor={chgColor(a.change_pct)} />
+                 right={fmtPct(a.change_pct)} rightColor={chgColor(a.change_pct)}
+                 onClick={() => setSelected({ symbol: a.symbol, name: a.country })} />
           ))}
         </div>
       </div>

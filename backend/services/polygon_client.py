@@ -100,17 +100,69 @@ async def fetch_options_chain(symbol: str, expiration_date: str = None) -> list:
     return contracts
 
 
-async def fetch_options_snapshot(symbol: str) -> list:
-    """Fetch options snapshots with Greeks and IV (requires options subscription)."""
+async def search_tickers(query: str, limit: int = 15) -> list:
+    """
+    Search the FULL market for tickers by symbol or company name prefix —
+    not just the curated ~500-name S&P universe in data_universe.py. Backs
+    the global symbol search so any listed US equity is discoverable.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+    cache_key = f"ticker_search:{query.lower()}:{limit}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    params = {"search": query, "market": "stocks", "active": "true",
+              "order": "asc", "limit": limit, "sort": "ticker"}
+    async with aiohttp.ClientSession() as session:
+        data = await _get(session, "/v3/reference/tickers", params)
+
+    results = []
+    for r in (data.get("results", []) if data else []):
+        results.append({
+            "ticker":          r.get("ticker"),
+            "name":            r.get("name"),
+            "exchange":        r.get("primary_exchange"),
+            "type":            r.get("type"),
+            "currency":        r.get("currency_name"),
+        })
+    await cache_set(cache_key, results, 3600)
+    return results
+
+
+async def fetch_options_snapshot(symbol: str, max_pages: int = 8) -> list:
+    """
+    Fetch options snapshots with Greeks and IV (requires options subscription).
+    A single page (limit=250) only covers the nearest, most strike-dense
+    expiration for liquid underlyings — e.g. a vol surface needs contracts
+    across MANY expirations to build a term structure, so this follows
+    Polygon's next_url cursor across pages (capped) rather than returning
+    just the first page.
+    """
     cache_key = f"options_snapshot:{symbol}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
 
+    results = []
     async with aiohttp.ClientSession() as session:
         data = await _get(session, f"/v3/snapshot/options/{symbol}", {"limit": 250})
+        if data:
+            results.extend(data.get("results", []))
+            next_url = data.get("next_url")
+            pages = 1
+            while next_url and pages < max_pages:
+                async with session.get(next_url, params={"apiKey": POLYGON_API_KEY},
+                                       timeout=aiohttp.ClientTimeout(total=10)) as r:
+                    if r.status != 200:
+                        break
+                    page = await r.json()
+                results.extend(page.get("results", []))
+                next_url = page.get("next_url")
+                pages += 1
 
-    results = data.get("results", []) if data else []
     await cache_set(cache_key, results, TTL_OPTIONS)
     return results
 
