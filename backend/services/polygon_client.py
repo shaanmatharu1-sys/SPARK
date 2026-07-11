@@ -17,6 +17,9 @@ from config import (
     POLYGON_WS_STOCKS,
     POLYGON_WS_OPTIONS,
     DEFAULT_WATCHLIST,
+    WS_CIRCUIT_BREAKER_THRESHOLD,
+    WS_CIRCUIT_BREAKER_COOLDOWN,
+    WS_RECV_TIMEOUT,
 )
 from cache.redis_client import cache_set, cache_get, hset_quote, publish
 from config import TTL_QUOTE, TTL_OPTIONS, TTL_UNUSUAL
@@ -267,63 +270,165 @@ async def fetch_splits(symbol: str) -> list:
 
 
 # ════════════════════════════════════════════════════════════════
-# WEBSOCKET — STOCKS FEED
+# WEBSOCKET — shared reliability base
 # ════════════════════════════════════════════════════════════════
+#
+# Root-cause note (found by live diagnostic testing, not inference): Polygon's
+# "connected"/"auth_success"/"auth_failed"/"error" control messages all carry
+# `ev: "status"` — the actual state is in a separate `status` field, e.g.
+# `{"ev":"status","status":"connected","message":"..."}`. The original code
+# here checked `msg.get("ev") == "connected"` etc, which never matched (ev is
+# always the literal string "status" for these), so auth was NEVER sent and
+# every connection just sat idle until Polygon's ping-timeout silently killed
+# it ~60s later — forever, in the reconnect loop visible in every session's
+# logs. Fixed below to check `status`, not `ev`. `ev` is still the right field
+# for actual market-data messages (T/Q/AM/O), which don't use this status
+# envelope at all.
+class _WSFeedBase:
+    """Shared connect/backoff/circuit-breaker state for the stocks and options feeds."""
 
-class PolygonStocksWS:
-    """
-    Maintains a persistent WebSocket connection to Polygon stocks feed.
-    On each message, updates Redis and publishes to the 'quotes' pub/sub channel.
-    Auto-reconnects with exponential backoff.
-    """
-
-    def __init__(self, symbols: list[str] = None):
-        self.symbols   = symbols or DEFAULT_WATCHLIST
-        self.running   = False
-        self._ws       = None
+    def __init__(self, name: str):
+        self.name = name
+        self.running = False
+        self._ws = None
+        self.consecutive_failures = 0
+        self.circuit_open_until = None
+        self.last_message_ts = None
+        self.last_status = "disconnected"  # disconnected | connecting | subscribed | circuit_open
+        self.last_error = None
 
     async def start(self):
         self.running = True
         backoff = 1
         while self.running:
+            if self.circuit_open_until and time.time() < self.circuit_open_until:
+                remaining = self.circuit_open_until - time.time()
+                self.last_status = "circuit_open"
+                await asyncio.sleep(min(remaining, 30))
+                continue
+
+            self.last_status = "connecting"
+            reached_live_data = False
             try:
-                await self._connect()
+                reached_live_data = await self._connect()
                 backoff = 1
             except Exception as e:
-                logger.error(f"[Polygon WS Stocks] Disconnected: {e}. Reconnect in {backoff}s")
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60)
+                self.last_error = str(e)
+                logger.error(f"[{self.name}] Disconnected: {e}. Reconnect in {backoff}s")
+
+            if reached_live_data:
+                self.consecutive_failures = 0
+                self.circuit_open_until = None
+            else:
+                self.consecutive_failures += 1
+                if self.consecutive_failures >= WS_CIRCUIT_BREAKER_THRESHOLD:
+                    self.circuit_open_until = time.time() + WS_CIRCUIT_BREAKER_COOLDOWN
+                    logger.error(
+                        f"[{self.name}] Circuit breaker tripped after "
+                        f"{self.consecutive_failures} consecutive failures — "
+                        f"cooling down for {WS_CIRCUIT_BREAKER_COOLDOWN}s"
+                    )
+                    self.consecutive_failures = 0
+                    continue
+
+            self.last_status = "disconnected"
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60)
 
     async def stop(self):
         self.running = False
         if self._ws:
             await self._ws.close()
 
-    async def _connect(self):
-        logger.info(f"[Polygon WS Stocks] Connecting -> {POLYGON_WS_STOCKS}")
+    def health(self) -> dict:
+        return {
+            "running": self.running,
+            "state": self.last_status,
+            "last_message_ts": self.last_message_ts,
+            "consecutive_failures": self.consecutive_failures,
+            "circuit_open": bool(self.circuit_open_until and time.time() < self.circuit_open_until),
+            "last_error": self.last_error,
+        }
+
+    async def _recv_loop(self, ws, on_status, on_market_msg):
+        """
+        Shared receive loop: times out if nothing arrives for WS_RECV_TIMEOUT
+        seconds (surfacing a stall immediately in logs, rather than waiting
+        for the underlying ping-timeout to kill the connection silently ~60s
+        later) and logs every raw status/error frame at INFO so entitlement
+        or auth issues are visible instead of silently swallowed.
+        Returns True once at least one real market-data message has been
+        received (the only condition that resets the circuit breaker).
+        """
+        reached_live_data = False
+        while True:
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=WS_RECV_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.warning(f"[{self.name}] No message received in {WS_RECV_TIMEOUT}s — treating as stalled")
+                return reached_live_data
+            messages = json.loads(raw)
+            for msg in messages:
+                ev = msg.get("ev")
+                if ev == "status":
+                    logger.debug(f"[{self.name}] raw status frame: {msg}")
+                    stop = await on_status(ws, msg)
+                    if stop:
+                        return reached_live_data
+                else:
+                    self.last_message_ts = time.time()
+                    reached_live_data = True
+                    self.last_status = "subscribed"
+                    await on_market_msg(msg)
+
+
+# ════════════════════════════════════════════════════════════════
+# WEBSOCKET — STOCKS FEED
+# ════════════════════════════════════════════════════════════════
+
+class PolygonStocksWS(_WSFeedBase):
+    """
+    Maintains a persistent WebSocket connection to Polygon stocks feed.
+    On each message, updates Redis and publishes to the 'quotes' pub/sub channel.
+    Auto-reconnects with exponential backoff + a circuit breaker (see _WSFeedBase).
+    """
+
+    def __init__(self, symbols: list[str] = None):
+        super().__init__("Polygon WS Stocks")
+        self.symbols = symbols or DEFAULT_WATCHLIST
+
+    async def _connect(self) -> bool:
+        logger.info(f"[{self.name}] Connecting -> {POLYGON_WS_STOCKS}")
         async with websockets.connect(POLYGON_WS_STOCKS, ping_interval=20) as ws:
             self._ws = ws
-            async for raw in ws:
-                messages = json.loads(raw)
-                for msg in messages:
-                    ev = msg.get("ev")
-                    if ev == "connected":
-                        await ws.send(json.dumps({"action": "auth", "params": POLYGON_API_KEY}))
-                    elif ev == "auth_success":
-                        subs = ",".join([
-                            f"T.{s}" for s in self.symbols   # Trades
-                        ] + [
-                            f"Q.{s}" for s in self.symbols   # Quotes
-                        ] + [
-                            f"AM.{s}" for s in self.symbols  # Agg minute bars
-                        ])
-                        await ws.send(json.dumps({"action": "subscribe", "params": subs}))
-                        logger.info(f"[Polygon WS Stocks] Subscribed to {len(self.symbols)} symbols")
-                    elif ev == "auth_failed":
-                        logger.error("[Polygon WS Stocks] Auth failed — check API key")
-                        return
-                    elif ev in ("T", "Q", "AM", "A"):
-                        await self._handle_market_msg(msg)
+
+            async def on_status(ws, msg):
+                status = msg.get("status")
+                if status == "connected":
+                    await ws.send(json.dumps({"action": "auth", "params": POLYGON_API_KEY}))
+                elif status == "auth_success":
+                    subs = ",".join(
+                        [f"T.{s}" for s in self.symbols]
+                        + [f"Q.{s}" for s in self.symbols]
+                        + [f"AM.{s}" for s in self.symbols]
+                    )
+                    await ws.send(json.dumps({"action": "subscribe", "params": subs}))
+                    logger.info(f"[{self.name}] Subscribed to {len(self.symbols)} symbols")
+                elif status == "auth_failed":
+                    self.last_error = "auth_failed"
+                    logger.error(f"[{self.name}] Auth failed — check API key")
+                    return True
+                elif status == "error":
+                    self.last_error = msg.get("message")
+                    logger.error(f"[{self.name}] Error from Polygon: {msg.get('message')}")
+                    # An error status (e.g. "not authorized") is a permanent
+                    # rejection for this connection attempt, not a transient
+                    # blip — stop immediately instead of waiting out the full
+                    # WS_RECV_TIMEOUT stall window before the caller retries.
+                    return True
+                return False
+
+            return await self._recv_loop(ws, on_status, self._handle_market_msg)
 
     async def _handle_market_msg(self, msg: dict):
         ev     = msg.get("ev")
@@ -371,45 +476,88 @@ class PolygonStocksWS:
 # WEBSOCKET — OPTIONS FEED
 # ════════════════════════════════════════════════════════════════
 
-class PolygonOptionsWS:
+class PolygonOptionsWS(_WSFeedBase):
     """
     Connects to Polygon options feed for real-time options quotes.
+
+    Subscription-format note: the previous code subscribed to `O:{underlying}`
+    (e.g. "O:AAPL") — but Polygon's options WS subscribes to actual per-contract
+    tickers (e.g. "O:AAPL250117C00150000"), not underlyings. Fixed below to
+    fetch each underlying's near-the-money contracts (nearest expirations,
+    capped count) via the existing fetch_options_snapshot() and subscribe to
+    those specific tickers. NOTE: this could not be verified end-to-end today
+    because the account currently lacks real-time entitlement (see the
+    _WSFeedBase docstring above) — Polygon rejects the subscribe call before
+    any contract-level behavior can be observed. Re-verify once entitlement
+    is confirmed active.
     """
 
     def __init__(self, symbols: list[str] = None):
+        super().__init__("Polygon WS Options")
         self.symbols = symbols or DEFAULT_WATCHLIST
-        self.running = False
 
-    async def start(self):
-        self.running = True
-        backoff = 1
-        while self.running:
+    async def _contract_tickers(self, max_per_underlying: int = 20) -> list[str]:
+        tickers = []
+        for sym in self.symbols:
             try:
-                await self._connect()
-                backoff = 1
+                chain = await fetch_options_snapshot(sym)
             except Exception as e:
-                logger.error(f"[Polygon WS Options] Disconnected: {e}. Reconnect in {backoff}s")
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60)
+                logger.warning(f"[{self.name}] couldn't fetch chain for {sym}: {e}")
+                continue
+            if not chain:
+                continue
+            # Nearest expiration only, sorted by |strike - underlying last price|
+            # so we subscribe to the most relevant near-the-money contracts
+            # rather than an entire (potentially huge) chain.
+            exps = sorted({c.get("details", {}).get("expiration_date") for c in chain if c.get("details")})
+            if not exps:
+                continue
+            nearest_exp = exps[0]
+            candidates = [c for c in chain if c.get("details", {}).get("expiration_date") == nearest_exp]
+            underlying_px = (candidates[0].get("underlying_asset", {}) or {}).get("price") if candidates else None
+            if underlying_px:
+                candidates.sort(key=lambda c: abs((c.get("details", {}).get("strike_price") or 0) - underlying_px))
+            for c in candidates[:max_per_underlying]:
+                t = c.get("details", {}).get("ticker")
+                if t:
+                    tickers.append(t)
+        return tickers
 
-    async def stop(self):
-        self.running = False
-
-    async def _connect(self):
-        logger.info(f"[Polygon WS Options] Connecting -> {POLYGON_WS_OPTIONS}")
+    async def _connect(self) -> bool:
+        logger.info(f"[{self.name}] Connecting -> {POLYGON_WS_OPTIONS}")
         async with websockets.connect(POLYGON_WS_OPTIONS, ping_interval=20) as ws:
-            async for raw in ws:
-                messages = json.loads(raw)
-                for msg in messages:
-                    ev = msg.get("ev")
-                    if ev == "connected":
-                        await ws.send(json.dumps({"action": "auth", "params": POLYGON_API_KEY}))
-                    elif ev == "auth_success":
-                        subs = ",".join([f"O:{s}" for s in self.symbols])
-                        await ws.send(json.dumps({"action": "subscribe", "params": subs}))
-                        logger.info("[Polygon WS Options] Subscribed")
-                    elif ev == "O":
-                        await self._handle_options_msg(msg)
+            self._ws = ws
+
+            async def on_status(ws, msg):
+                status = msg.get("status")
+                if status == "connected":
+                    await ws.send(json.dumps({"action": "auth", "params": POLYGON_API_KEY}))
+                elif status == "auth_success":
+                    contract_tickers = await self._contract_tickers()
+                    if not contract_tickers:
+                        logger.warning(f"[{self.name}] no contract tickers resolved; nothing to subscribe to")
+                        return True
+                    # Quotes only — _handle_options_msg below expects quote-shaped
+                    # fields (bp/ap/bs/as); trade messages (T.) have a different
+                    # shape (p/s) that isn't handled here, so don't subscribe to them.
+                    subs = ",".join(f"Q.{t}" for t in contract_tickers)
+                    await ws.send(json.dumps({"action": "subscribe", "params": subs}))
+                    logger.info(f"[{self.name}] Subscribed to {len(contract_tickers)} contracts")
+                elif status == "auth_failed":
+                    self.last_error = "auth_failed"
+                    logger.error(f"[{self.name}] Auth failed — check API key")
+                    return True
+                elif status == "error":
+                    self.last_error = msg.get("message")
+                    logger.error(f"[{self.name}] Error from Polygon: {msg.get('message')}")
+                    # An error status (e.g. "not authorized") is a permanent
+                    # rejection for this connection attempt, not a transient
+                    # blip — stop immediately instead of waiting out the full
+                    # WS_RECV_TIMEOUT stall window before the caller retries.
+                    return True
+                return False
+
+            return await self._recv_loop(ws, on_status, self._handle_options_msg)
 
     async def _handle_options_msg(self, msg: dict):
         data = {

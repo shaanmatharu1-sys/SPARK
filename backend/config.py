@@ -88,3 +88,12 @@ TTL_SECTORS  = 30
 TTL_UNUSUAL  = 60
 TTL_FUTURES  = 60            # yfinance quotes — futures move faster than intl indices
 TTL_COT      = 259200        # 3 days — CFTC COT report only updates weekly (Fridays)
+
+# ── WebSocket reliability ────────────────────────────────────────
+# After this many consecutive connect/auth/subscribe failures, stop the fast
+# exponential backoff and cool down for WS_CIRCUIT_BREAKER_COOLDOWN seconds
+# instead — protects against hammering Polygon's endpoint indefinitely if
+# something is structurally broken (bad entitlement, bad credentials, etc).
+WS_CIRCUIT_BREAKER_THRESHOLD = 3
+WS_CIRCUIT_BREAKER_COOLDOWN  = 600   # 10 min
+WS_RECV_TIMEOUT              = 25    # seconds without any message before treating the connection as stalled

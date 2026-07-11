@@ -237,6 +237,11 @@ app.include_router(auth_router.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
+# feeds.stocks_ws/options_ws used to just report `.running` (a flag that
+# stays True for the entire life of a silently-failing reconnect loop, so
+# this always reported "healthy" even when no real tick had ever arrived —
+# see the root-cause note on _WSFeedBase in services/polygon_client.py).
+# Now reports real connection state instead.
 @app.get("/health")
 async def health():
     redis_ok = await redis_ping()
@@ -244,8 +249,8 @@ async def health():
         "status": "ok",
         "redis":  redis_ok,
         "feeds": {
-            "stocks_ws":  stocks_ws.running,
-            "options_ws": options_ws.running,
+            "stocks_ws":  stocks_ws.health(),
+            "options_ws": options_ws.health(),
         },
     }
 

@@ -268,6 +268,13 @@ export const alertsApi = {
   },
 }
 
+// ── WebSocket feed health (honest LIVE/DELAYED indicator — see backend
+// main.py's /health, which now reports real connection state instead of
+// the old always-true `.running` flag) ──
+export function useWebSocketHealth() {
+  return useFetch('/health', 15_000)
+}
+
 // ── Market regime dashboard ──
 export function useMarketRegime() {
   return useFetch('/regime/', 300_000)

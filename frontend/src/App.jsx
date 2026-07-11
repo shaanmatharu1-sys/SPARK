@@ -40,7 +40,7 @@ import BacktestTab      from './components/Backtest/BacktestTab'
 import Arbitrage        from './components/Arbitrage/Arbitrage'
 import { SymbolProvider, useSymbol } from './hooks/useSymbol'
 import { AuthProvider, useAuth } from './hooks/useAuth'
-import { useWatchlist } from './hooks/useMarketData'
+import { useWatchlist, useWebSocketHealth } from './hooks/useMarketData'
 import LoginScreen from './components/Auth/LoginScreen'
 import { THEMES } from './themes'
 import Events           from './components/Events/Events'
@@ -84,6 +84,28 @@ function UserMenu() {
   )
 }
 
+function LiveIndicator() {
+  const { data } = useWebSocketHealth()
+  const stocks = data?.feeds?.stocks_ws
+  if (!stocks) return null
+
+  const live = stocks.state === 'subscribed'
+  const label = live ? 'LIVE'
+    : stocks.circuit_open ? 'DELAYED (feed down)'
+    : stocks.state === 'connecting' ? 'CONNECTING'
+    : 'DELAYED'
+  const color = live ? 'var(--green)' : 'var(--gold)'
+  const title = stocks.last_error
+    ? `Real-time feed unavailable: ${stocks.last_error}. Showing polled/delayed data.`
+    : live ? 'Real-time WebSocket feed connected' : 'Real-time feed not connected — showing polled data'
+
+  return (
+    <span title={title} style={{ color, fontSize: 9, cursor: 'help' }}>
+      ● {label}
+    </span>
+  )
+}
+
 function Clock() {
   const [time, setTime] = useState(new Date())
   useEffect(() => {
@@ -100,6 +122,7 @@ function Clock() {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <LiveIndicator />
       <span style={{ color: isMarketOpen() ? 'var(--green)' : 'var(--red)', fontSize: 9 }}>
         ● {isMarketOpen() ? 'MARKET OPEN' : 'MARKET CLOSED'}
       </span>
