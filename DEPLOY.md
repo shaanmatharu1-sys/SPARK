@@ -54,6 +54,7 @@ In the backend service -> **Variables**, add:
 | Variable | Value |
 |----------|-------|
 | `POLYGON_API_KEY` | your Polygon key |
+| `FINNHUB_API_KEY` | your Finnhub key (free tier — powers the real-time stock WS feed) |
 | `FRED_API_KEY` | your FRED key |
 | `NEWS_API_KEY` | your NewsAPI key (optional) |
 | `REDIS_URL` | `${{Redis.REDIS_URL}}` — references the Redis service |

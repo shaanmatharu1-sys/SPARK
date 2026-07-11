@@ -21,7 +21,11 @@ from cache.redis_client import ping as redis_ping
 from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata, fundamentals, futures, workspace, alerts, regime, auth as auth_router
 
 # ── Background WS feeds ──────────────────────────────────────────────────────
-from services.polygon_client import PolygonStocksWS, PolygonOptionsWS
+# Stocks: Finnhub free-tier WS (real-time, no paid entitlement needed).
+# Options: stays on Polygon — Finnhub's options chain/Greeks coverage isn't
+# proven to match it, and the IV surface/Greeks work already built against Polygon.
+from services.polygon_client import PolygonOptionsWS
+from services.finnhub_ws_client import FinnhubStocksWS
 
 # ── Scheduled refreshes ──────────────────────────────────────────────────────
 from services.fred_client    import fetch_macro_dashboard, fetch_yield_curve
@@ -41,7 +45,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── WebSocket feed instances ──────────────────────────────────────────────────
-stocks_ws  = PolygonStocksWS(symbols=DEFAULT_WATCHLIST + SECTOR_ETFS)
+stocks_ws  = FinnhubStocksWS(symbols=DEFAULT_WATCHLIST + SECTOR_ETFS)
 options_ws = PolygonOptionsWS(symbols=DEFAULT_WATCHLIST)
 
 # ── Scheduler ────────────────────────────────────────────────────────────────
@@ -164,10 +168,10 @@ async def lifespan(app: FastAPI):
     )
     logger.info("[Startup] Cache warm-up complete")
 
-    # Start Polygon WebSocket feeds
-    asyncio.create_task(stocks_ws.start(),  name="polygon_stocks_ws")
+    # Start real-time WS feeds — stocks via Finnhub (free), options via Polygon
+    asyncio.create_task(stocks_ws.start(),  name="finnhub_stocks_ws")
     asyncio.create_task(options_ws.start(), name="polygon_options_ws")
-    logger.info("[Polygon] WebSocket feeds starting...")
+    logger.info("[WS Feeds] Finnhub stocks + Polygon options starting...")
 
     # Start vessel-tracking feed (AISstream) if configured
     from services import vessel_client
