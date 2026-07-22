@@ -36,10 +36,16 @@ export default function OptionsChain() {
 
   // Center the table on the at-the-money strike whenever a fresh chain loads,
   // instead of leaving the scroll position (and the reader) parked at the
-  // lowest strike on the page.
+  // lowest strike on the page. Deliberately NOT scrollIntoView(): it walks
+  // every scrollable ancestor looking for the best fit, which in this
+  // layout meant clicking an expiration date could scroll the whole page
+  // grid, not just this panel. Setting scrollTop directly touches only
+  // this panel's own scroll container.
   useEffect(() => {
-    if (atmRowRef.current && bodyRef.current) {
-      atmRowRef.current.scrollIntoView({ block: 'center' })
+    const row = atmRowRef.current
+    const container = bodyRef.current
+    if (row && container) {
+      container.scrollTop = row.offsetTop - container.clientHeight / 2 + row.clientHeight / 2
     }
   }, [data?.symbol, data?.expiration, data?.atm_strike])
 
