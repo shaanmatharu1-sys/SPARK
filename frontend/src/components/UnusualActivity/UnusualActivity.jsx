@@ -66,7 +66,7 @@ export default function UnusualActivity() {
               const det = c.details || {}
               const day = c.day || {}
               return (
-                <tr key={i}>
+                <tr key={det.ticker || `${det.underlying_ticker}-${det.contract_type}-${det.strike_price}-${det.expiration_date}` || i}>
                   <td style={{ color: 'var(--yellow)', fontSize: 10 }}>
                     {det.underlying_ticker || '—'}
                   </td>

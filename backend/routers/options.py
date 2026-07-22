@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from websocket.manager import manager
-from services.polygon_client import fetch_options_chain, fetch_options_snapshot, fetch_agg_bars
+from services.polygon_client import fetch_options_chain, fetch_options_snapshot, fetch_agg_bars, fetch_snapshot
 from cache.redis_client import subscribe
 from auth import get_current_user
 from db import get_db
@@ -71,14 +71,28 @@ async def get_options_snapshot(symbol: str):
 async def get_options_chain_full(
     symbol:          str,
     expiration_date: str = Query(default=None),
+    window:          int = Query(default=20, description="Strikes to keep above/below the money; 0 = all"),
 ):
     """
-    GET /options/AAPL/chain-full?expiration_date=2026-07-06
+    GET /options/AAPL/chain-full?expiration_date=2026-07-06&window=20
     Calls | strike | puts chain, grouped by expiration, using the snapshot
     endpoint (which carries Greeks/IV/volume/OI) rather than the reference
     endpoint (which only has static contract metadata, no Greeks).
+
+    Rows are trimmed to `window` strikes on each side of the money (spot
+    price) by default — an underlying can have 100+ strikes per expiration,
+    and traders care about the ones near the money, not the tails. Pass
+    window=0 to get every strike.
     """
-    contracts = await fetch_options_snapshot(symbol.upper())
+    symbol = symbol.upper()
+    contracts_task = fetch_options_snapshot(symbol)
+    spot_task = fetch_snapshot([symbol])
+    contracts, snap = await contracts_task, await spot_task
+
+    spot = None
+    s = snap.get(symbol, {})
+    spot = (s.get("lastTrade", {}) or {}).get("p") or (s.get("day", {}) or {}).get("c") \
+        or (s.get("prevDay", {}) or {}).get("c")
 
     expirations = sorted({
         c.get("details", {}).get("expiration_date")
@@ -113,7 +127,21 @@ async def get_options_chain_full(
         }
 
     rows = sorted(by_strike.values(), key=lambda r: r["strike"])
-    return {"symbol": symbol.upper(), "expiration": expiration_date, "expirations": expirations, "rows": rows}
+
+    atm_strike = None
+    if rows and spot:
+        atm_strike = min((r["strike"] for r in rows), key=lambda k: abs(k - spot))
+
+    total_rows = len(rows)
+    if window and atm_strike is not None:
+        atm_idx = next(i for i, r in enumerate(rows) if r["strike"] == atm_strike)
+        rows = rows[max(0, atm_idx - window): atm_idx + window + 1]
+
+    return {
+        "symbol": symbol, "expiration": expiration_date, "expirations": expirations,
+        "spot": spot, "atm_strike": atm_strike, "rows": rows,
+        "total_strikes": total_rows, "showing": len(rows), "window": window,
+    }
 
 
 # ════════════════════════════════════════════════════════════════

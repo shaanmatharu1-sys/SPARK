@@ -82,9 +82,11 @@ export function useOptionsSnapshot(symbol) {
   return useFetch(`/options/${symbol}/snapshot`, 10_000)
 }
 
-export function useOptionsChainFull(symbol, expiration) {
-  const qs = expiration ? `?expiration_date=${expiration}` : ''
-  return useFetch(symbol ? `/options/${symbol}/chain-full${qs}` : null, 15_000)
+export function useOptionsChainFull(symbol, expiration, window = 20) {
+  const params = new URLSearchParams()
+  if (expiration) params.set('expiration_date', expiration)
+  params.set('window', window)
+  return useFetch(symbol ? `/options/${symbol}/chain-full?${params}` : null, 15_000)
 }
 
 // ── Manual option positions / portfolio Greeks ──

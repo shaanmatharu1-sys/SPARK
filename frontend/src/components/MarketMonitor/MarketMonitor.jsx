@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useQuotes } from '../../hooks/useMarketData'
+import { heatBg } from '../../lib/colorScale'
 
 const DEFAULT_WATCHLIST = ['SPY','QQQ','IWM','AAPL','MSFT','NVDA','TSLA','META','GOOGL','AMZN']
 
@@ -112,7 +113,7 @@ export default function MarketMonitor({ symbols }) {
                   <tr key={sym} className={flashRef.current[sym] || ''}>
                     <td style={{ color: 'var(--yellow)', fontWeight: 'bold' }}>{sym}</td>
                     <td style={{ color: 'var(--text-primary)' }}>{fmt(q.price)}</td>
-                    <td><PctChange value={pct} /></td>
+                    <td style={heatBg(pct, 3)}><PctChange value={pct} /></td>
                     <td>{fmt(q.open)}</td>
                     <td className="green">{fmt(q.high)}</td>
                     <td className="red">{fmt(q.low)}</td>

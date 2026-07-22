@@ -28,7 +28,7 @@ try:
 except ImportError:
     HAS_QUANT = False
 
-from analytics.backtest.strategies import STRATEGIES, STRATEGY_META
+from analytics.backtest.strategies import STRATEGIES, STRATEGY_META, custom_strategy
 
 
 @dataclass
@@ -52,10 +52,13 @@ def evaluate_algo(config: AlgoConfig, price_history: dict[str, list[float]],
     """
     if not HAS_QUANT:
         return {"error": "quant_module not compiled"}
-    if config.strategy not in STRATEGIES:
+    is_custom = config.strategy == "custom"
+    if not is_custom and config.strategy not in STRATEGIES:
         return {"error": f"unknown strategy '{config.strategy}'"}
+    if is_custom and not config.params.get("entry"):
+        return {"error": "custom strategy requires at least one entry rule"}
 
-    strat_fn = STRATEGIES[config.strategy]
+    strat_fn = None if is_custom else STRATEGIES[config.strategy]
     targets = {}
     signals = {}
 
@@ -65,11 +68,16 @@ def evaluate_algo(config: AlgoConfig, price_history: dict[str, list[float]],
             continue
         prices = [float(p) for p in prices if p is not None]
 
-        # Strategy returns a position series in [-1, 1]; take the latest
-        try:
-            positions = strat_fn(prices, **config.params)
-        except TypeError:
-            positions = strat_fn(prices)
+        if is_custom:
+            # Rule-based custom model (same engine BacktestTab's "build your
+            # own" uses): long/flat only, no shorting.
+            positions = custom_strategy(prices, config.params.get("entry", []), config.params.get("exit", []))
+        else:
+            # Strategy returns a position series in [-1, 1]; take the latest
+            try:
+                positions = strat_fn(prices, **config.params)
+            except TypeError:
+                positions = strat_fn(prices)
         signal = positions[-1] if positions else 0.0
         signals[sym] = round(float(signal), 3)
 

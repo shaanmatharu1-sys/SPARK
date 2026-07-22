@@ -26,6 +26,10 @@ from routers import quotes, options, macro, news, sectors, sentiment, unusual_ac
 # proven to match it, and the IV surface/Greeks work already built against Polygon.
 from services.polygon_client import PolygonOptionsWS
 from services.finnhub_ws_client import FinnhubStocksWS
+# Crypto: Coinbase public WS — no key, no market-hours gap, keeps the terminal
+# genuinely live 24/7 even when equities/options are closed. (Binance's public
+# WS was tried first but returns HTTP 451 — geo-blocked from US hosts.)
+from services.coinbase_ws_client import CoinbaseCryptoWS
 
 # ── Scheduled refreshes ──────────────────────────────────────────────────────
 from services.fred_client    import fetch_macro_dashboard, fetch_yield_curve
@@ -47,6 +51,7 @@ logger = logging.getLogger(__name__)
 # ── WebSocket feed instances ──────────────────────────────────────────────────
 stocks_ws  = FinnhubStocksWS(symbols=DEFAULT_WATCHLIST + SECTOR_ETFS)
 options_ws = PolygonOptionsWS(symbols=DEFAULT_WATCHLIST)
+crypto_ws  = CoinbaseCryptoWS()
 
 # ── Scheduler ────────────────────────────────────────────────────────────────
 scheduler = AsyncIOScheduler()
@@ -168,10 +173,12 @@ async def lifespan(app: FastAPI):
     )
     logger.info("[Startup] Cache warm-up complete")
 
-    # Start real-time WS feeds — stocks via Finnhub (free), options via Polygon
+    # Start real-time WS feeds — stocks via Finnhub (free), options via Polygon,
+    # crypto via Coinbase (free, 24/7 — never gated by market hours)
     asyncio.create_task(stocks_ws.start(),  name="finnhub_stocks_ws")
     asyncio.create_task(options_ws.start(), name="polygon_options_ws")
-    logger.info("[WS Feeds] Finnhub stocks + Polygon options starting...")
+    asyncio.create_task(crypto_ws.start(),  name="coinbase_crypto_ws")
+    logger.info("[WS Feeds] Finnhub stocks + Polygon options + Coinbase crypto starting...")
 
     # Start vessel-tracking feed (AISstream) if configured
     from services import vessel_client
@@ -193,6 +200,7 @@ async def lifespan(app: FastAPI):
     logger.info("[Shutdown] Stopping feeds and scheduler...")
     await stocks_ws.stop()
     await options_ws.stop()
+    await crypto_ws.stop()
     scheduler.shutdown(wait=False)
     logger.info("[Shutdown] Clean exit")
 
@@ -255,6 +263,7 @@ async def health():
         "feeds": {
             "stocks_ws":  stocks_ws.health(),
             "options_ws": options_ws.health(),
+            "crypto_ws":  crypto_ws.health(),
         },
     }
 

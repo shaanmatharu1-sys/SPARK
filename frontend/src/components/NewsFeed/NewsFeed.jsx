@@ -29,7 +29,7 @@ export default function NewsFeed() {
           <div style={{ padding: 12, color: 'var(--text-dim)' }}>Loading news...</div>
         ) : (
           (articles || []).map((a, i) => (
-            <div key={i} style={{
+            <div key={a.url || a.id || i} style={{
               padding: '7px 10px',
               borderBottom: '1px solid var(--border)',
             }}>

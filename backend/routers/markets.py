@@ -1,12 +1,15 @@
 """
 routers/markets.py — Movers, crypto, earnings, SEC filings, social sentiment
 """
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from services.polygon_client import (
     fetch_movers, fetch_crypto_snapshot, fetch_crypto_bars, fetch_earnings, search_tickers,
 )
 from services.filings_client import fetch_filings, fetch_filings_by_type
 from services.sentiment_social import fetch_social_sentiment
+from websocket.manager import manager
+from cache.redis_client import subscribe
+import json
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 
@@ -40,6 +43,26 @@ async def get_crypto_bars(symbol: str, days: int = Query(default=30)):
     """OHLCV bars for a crypto symbol (e.g. X:BTCUSD)."""
     sym = symbol if symbol.startswith("X:") else f"X:{symbol.upper()}"
     return await fetch_crypto_bars(sym, days)
+
+
+@router.websocket("/crypto/ws")
+async def crypto_websocket(websocket: WebSocket):
+    """
+    WebSocket: ws://localhost:8000/markets/crypto/ws
+    Streams real-time crypto ticker updates (price/chg%/high/low/volume) from
+    the Binance feed via Redis pub/sub — live 24/7, crypto never closes.
+    """
+    await manager.connect(websocket, "crypto")
+    try:
+        async for message in subscribe("crypto"):
+            try:
+                await websocket.send_text(json.dumps(message))
+            except Exception:
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(websocket, "crypto")
 
 
 @router.get("/earnings/{symbol}")

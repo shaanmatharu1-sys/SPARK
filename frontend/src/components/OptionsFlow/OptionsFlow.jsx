@@ -75,7 +75,7 @@ export default function OptionsFlow() {
               const g    = c.greeks || {}
               const isCall = det.contract_type === 'call'
               return (
-                <tr key={i}>
+                <tr key={det.ticker || `${det.contract_type}-${det.strike_price}-${det.expiration_date}` || i}>
                   <td style={{
                     color: isCall ? 'var(--green)' : 'var(--red)', fontWeight: 'bold',
                   }}>

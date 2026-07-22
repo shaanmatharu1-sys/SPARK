@@ -22,7 +22,7 @@ function StatBox({ label, value, good }) {
   )
 }
 
-function RuleEditor({ rules, setRules, indicators, label }) {
+export function RuleEditor({ rules, setRules, indicators, label }) {
   const add = () => setRules([...rules, { indicator: 'rsi', op: '<', value: 30, param: 14 }])
   const update = (i, k, v) => setRules(rules.map((r, j) => j === i ? { ...r, [k]: v } : r))
   const remove = (i) => setRules(rules.filter((_, j) => j !== i))

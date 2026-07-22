@@ -25,6 +25,7 @@ class ConnectionManager:
             "news":    set(),
             "macro":   set(),
             "sectors": set(),
+            "crypto":  set(),
         }
 
     async def connect(self, websocket: WebSocket, channel: str):

@@ -175,6 +175,13 @@ body {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* at-the-money strike row (options chain) */
+.atm-row td {
+  background: var(--gold-dim, rgba(201,168,76,0.14));
+  border-top: 1px solid var(--gold);
+  border-bottom: 1px solid var(--gold);
+}
 .bbg-table td:first-child {
   text-align: left;
   font-family: var(--font-ui);

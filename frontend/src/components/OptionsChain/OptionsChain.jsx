@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useOptionsChainFull } from '../../hooks/useMarketData'
 import { useSymbol } from '../../hooks/useSymbol'
+import { heatBg } from '../../lib/colorScale'
 
 function fmt(n, d = 2) { return n == null ? '—' : Number(n).toFixed(d) }
 function fmtIV(n) { return n == null ? '—' : (n * 100).toFixed(1) + '%' }
@@ -12,7 +13,7 @@ function Side({ c, align }) {
       <td className="dim">{fmt(c.volume, 0)}</td>
       <td className="dim">{fmt(c.open_interest, 0)}</td>
       <td>{fmtIV(c.iv)}</td>
-      <td className={c.delta >= 0 ? 'green' : 'red'}>{fmt(c.delta, 3)}</td>
+      <td className={c.delta >= 0 ? 'green' : 'red'} style={heatBg(c.delta, 1)}>{fmt(c.delta, 3)}</td>
       <td style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmt(c.last)}</td>
     </>
   )
@@ -23,12 +24,24 @@ export default function OptionsChain() {
   const [input, setInput] = useState(symbol)
   useEffect(() => { setInput(symbol) }, [symbol])
   const [expiration, setExpiration] = useState(null)
+  const [showAll, setShowAll] = useState(false)
+  const bodyRef = useRef(null)
+  const atmRowRef = useRef(null)
 
-  const { data, loading } = useOptionsChainFull(symbol, expiration)
+  const { data, loading } = useOptionsChainFull(symbol, expiration, showAll ? 0 : 20)
 
   // Reset the selected expiration when the symbol changes, so we don't hold
   // onto a stale date from the previous symbol's chain.
   useEffect(() => { setExpiration(null) }, [symbol])
+
+  // Center the table on the at-the-money strike whenever a fresh chain loads,
+  // instead of leaving the scroll position (and the reader) parked at the
+  // lowest strike on the page.
+  useEffect(() => {
+    if (atmRowRef.current && bodyRef.current) {
+      atmRowRef.current.scrollIntoView({ block: 'center' })
+    }
+  }, [data?.symbol, data?.expiration, data?.atm_strike])
 
   return (
     <div className="panel" style={{ height: '100%' }}>
@@ -42,12 +55,22 @@ export default function OptionsChain() {
               {exp}
             </button>
           ))}
+          {data?.spot != null && (
+            <span className="dim" style={{ fontSize: 9 }}>
+              spot <span style={{ color: 'var(--gold-bright)' }}>{fmt(data.spot)}</span>
+            </span>
+          )}
+          <button className={`btn ${showAll ? 'active' : ''}`} style={{ fontSize: 9, padding: '2px 7px' }}
+            onClick={() => setShowAll(s => !s)}
+            title={data?.total_strikes ? `${data.total_strikes} strikes available` : ''}>
+            {showAll ? 'Near money only' : 'Show all strikes'}
+          </button>
           <input className="input" style={{ width: 60 }} value={input}
             onChange={e => setInput(e.target.value.toUpperCase())}
             onKeyDown={e => e.key === 'Enter' && setSymbol(input)} />
         </div>
       </div>
-      <div className="panel-body">
+      <div className="panel-body" ref={bodyRef}>
         {loading && !data ? (
           <div style={{ padding: 16, color: 'var(--text-dim)' }}>Loading chain…</div>
         ) : !data?.rows?.length ? (
@@ -67,17 +90,21 @@ export default function OptionsChain() {
               </tr>
             </thead>
             <tbody>
-              {data.rows.map(row => (
-                <tr key={row.strike}>
-                  <Side c={row.call} align="left" />
-                  <td style={{ color: 'var(--gold)', fontWeight: 700, textAlign: 'center' }}>{row.strike}</td>
-                  <td style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmt(row.put?.last)}</td>
-                  <td className={row.put?.delta >= 0 ? 'green' : 'red'}>{fmt(row.put?.delta, 3)}</td>
-                  <td>{fmtIV(row.put?.iv)}</td>
-                  <td className="dim">{fmt(row.put?.open_interest, 0)}</td>
-                  <td className="dim">{fmt(row.put?.volume, 0)}</td>
-                </tr>
-              ))}
+              {data.rows.map(row => {
+                const isAtm = row.strike === data.atm_strike
+                return (
+                  <tr key={row.strike} ref={isAtm ? atmRowRef : null}
+                    className={isAtm ? 'atm-row' : ''}>
+                    <Side c={row.call} align="left" />
+                    <td style={{ color: 'var(--gold)', fontWeight: 700, textAlign: 'center' }}>{row.strike}</td>
+                    <td style={{ color: 'var(--gold)', fontWeight: 600 }}>{fmt(row.put?.last)}</td>
+                    <td className={row.put?.delta >= 0 ? 'green' : 'red'} style={heatBg(row.put?.delta, 1)}>{fmt(row.put?.delta, 3)}</td>
+                    <td>{fmtIV(row.put?.iv)}</td>
+                    <td className="dim">{fmt(row.put?.open_interest, 0)}</td>
+                    <td className="dim">{fmt(row.put?.volume, 0)}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
