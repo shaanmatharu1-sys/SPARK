@@ -32,37 +32,49 @@ async def get_options_snapshot(symbol: str):
     Returns options chain with Greeks + IV from Polygon (requires options tier).
     Falls back to our C++ Greeks calculator if server-side Greeks unavailable.
     """
-    data = await fetch_options_snapshot(symbol.upper())
+    symbol = symbol.upper()
+    data_task = fetch_options_snapshot(symbol)
+    spot_task = fetch_snapshot([symbol])
+    data, snap = await data_task, await spot_task
 
-    # Enrich with C++ Greeks if Polygon didn't supply them
-    try:
-        from cpp_ext.greeks import greeks_module  # compiled pybind11 module
-        import time
-        S = None  # underlying price — would be fetched separately
+    s = snap.get(symbol, {})
+    S = (s.get("lastTrade", {}) or {}).get("p") or (s.get("day", {}) or {}).get("c") \
+        or (s.get("prevDay", {}) or {}).get("c")
 
-        for contract in data:
-            details = contract.get("details", {})
-            day     = contract.get("day", {})
-            greeks  = contract.get("greeks", {})
+    # Enrich with C++ Greeks if Polygon didn't supply them (was previously
+    # dead code — S was hardcoded to None so this branch never ran, which
+    # is why most contracts showed no Greeks at all in the options flow).
+    if S:
+        try:
+            from cpp_ext.greeks import greeks_module  # compiled pybind11 module
+            import datetime
 
-            # Only compute if Polygon Greeks are missing
-            if not greeks.get("delta") and S:
-                import datetime
-                exp_str = details.get("expiration_date", "")
-                if exp_str:
-                    exp_dt  = datetime.datetime.strptime(exp_str, "%Y-%m-%d")
-                    T       = max((exp_dt - datetime.datetime.now()).days / 365.0, 1e-6)
-                    K       = float(details.get("strike_price", S))
-                    mid     = (day.get("open", S) + day.get("close", S)) / 2 if day else S
-                    is_call = details.get("contract_type", "call").lower() == "call"
+            for contract in data:
+                details = contract.get("details", {})
+                day     = contract.get("day", {})
+                greeks  = contract.get("greeks", {})
 
-                    g = greeks_module.compute_greeks(
-                        S=S, K=K, T=T, r=0.05, sigma=0.25, is_call=is_call
-                    )
-                    contract["greeks"] = g
+                # Only compute if Polygon Greeks are missing
+                if not greeks.get("delta"):
+                    exp_str = details.get("expiration_date", "")
+                    strike  = details.get("strike_price")
+                    if exp_str and strike:
+                        exp_dt  = datetime.datetime.strptime(exp_str, "%Y-%m-%d")
+                        T       = max((exp_dt - datetime.datetime.now()).days / 365.0, 1e-6)
+                        K       = float(strike)
+                        is_call = details.get("contract_type", "call").lower() == "call"
 
-    except ImportError:
-        pass  # C++ extension not compiled yet — serve Polygon data as-is
+                        # No per-contract IV without Polygon's own Greeks, so
+                        # this uses a flat 25% vol assumption — an approximate
+                        # fallback, not a substitute for a real IV surface.
+                        g = greeks_module.compute_greeks(
+                            S=S, K=K, T=T, r=0.05, sigma=0.25, is_call=is_call
+                        )
+                        contract["greeks"] = g
+                        contract["greeks_estimated"] = True
+
+        except ImportError:
+            pass  # C++ extension not compiled yet — serve Polygon data as-is
 
     return data
 

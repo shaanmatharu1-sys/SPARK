@@ -9,8 +9,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services.fred_client import fetch_credit_dashboard
 from services.polygon_client import fetch_snapshot, fetch_options_snapshot, fetch_agg_bars
 from analytics.network.engine import build_network
+from data_universe import UNIVERSE
 import datetime
 import asyncio
+
+# GICS's 11 sectors collapsed to the 6 buckets Network.jsx's legend/color
+# key actually has — was never wired in before (build_network() was called
+# with no sectors arg at all, so every node silently fell back to "Unknown"
+# and the sector legend was dead weight).
+_GICS_TO_DISPLAY = {
+    "Energy": "Energy",
+    "Materials": "Industrials",
+    "Industrials": "Industrials",
+    "Utilities": "Industrials",
+    "Consumer Discretionary": "Consumer",
+    "Consumer Staples": "Consumer",
+    "Health Care": "Healthcare",
+    "Financials": "Financials",
+    "Real Estate": "Financials",
+    "Information Technology": "Tech",
+    "Communication Services": "Tech",
+}
 from analytics.options.engine import (
     payoff_diagram, build_strategy, iv_rank_percentile, putcall_signal,
     vol_skew, STRATEGY_LIST,
@@ -60,7 +79,11 @@ async def correlation_network(
     if len(universe) < 2:
         return {"error": "insufficient price data", "loaded": list(universe.keys())}
 
-    return build_network(universe, threshold=threshold)
+    sectors = {
+        s: _GICS_TO_DISPLAY.get(UNIVERSE[s]["sector"], "Unknown")
+        for s in universe if s in UNIVERSE
+    }
+    return build_network(universe, threshold=threshold, sectors=sectors)
 
 
 @router.get("/ties")

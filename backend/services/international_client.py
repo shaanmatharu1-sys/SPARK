@@ -194,6 +194,17 @@ async def fetch_fx():
         return cached
     symbols = list(FX_PAIRS.keys())
     snap = await fetch_fx_snapshot(symbols)
+    if not snap:
+        # fetch_fx_snapshot returns {} both on a transient failure and on a
+        # 403 (this Polygon plan doesn't include forex) — either way, don't
+        # silently render every row as blank dashes; say so.
+        out = {
+            "fx": [], "available": False,
+            "reason": "FX snapshot unavailable — check Polygon plan entitlement for forex data",
+            "as_of": datetime.datetime.utcnow().isoformat(),
+        }
+        await cache_set(cache_key, out, ttl=60)
+        return out
     rows = []
     for sym in symbols:
         d = snap.get(sym, {})
@@ -208,7 +219,7 @@ async def fetch_fx():
             "rate": round(last, 4) if last else None,
             "change_pct": round(pchg, 2) if pchg is not None else None,
         })
-    out = {"fx": rows, "as_of": datetime.datetime.utcnow().isoformat()}
+    out = {"fx": rows, "available": True, "as_of": datetime.datetime.utcnow().isoformat()}
     await cache_set(cache_key, out, ttl=60)
     return out
 

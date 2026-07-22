@@ -577,7 +577,14 @@ class PolygonOptionsWS(_WSFeedBase):
 # ════════════════════════════════════════════════════════════════
 
 async def fetch_movers(direction: str = "gainers") -> list:
-    """Top gainers or losers for the day. direction: 'gainers' | 'losers'."""
+    """
+    Top gainers or losers for the day. direction: 'gainers' | 'losers'.
+    Polygon's raw snapshot includes illiquid sub-$1 tickers whose prevDay
+    close is stale or near-zero, which produces nonsense swings (a $0.001
+    stock can show as +50,000% on a single trade) — filtered out below the
+    same way a real movers screen would, rather than passing that noise
+    straight through.
+    """
     cache_key = f"movers:{direction}"
     cached = await cache_get(cache_key)
     if cached:
@@ -587,12 +594,17 @@ async def fetch_movers(direction: str = "gainers") -> list:
             f"/v2/snapshot/locale/us/markets/stocks/{direction}", {})
     movers = []
     for t in (data.get("tickers", []) if data else []):
+        price  = t.get("lastTrade", {}).get("p") or t.get("day", {}).get("c")
+        volume = t.get("day", {}).get("v")
+        change_pct = t.get("todaysChangePerc", 0)
+        if not price or price < 1 or not volume or volume < 50_000 or abs(change_pct) > 1000:
+            continue
         movers.append({
             "symbol":     t.get("ticker"),
-            "price":      t.get("lastTrade", {}).get("p") or t.get("day", {}).get("c"),
+            "price":      price,
             "change":     t.get("todaysChange"),
-            "change_pct": round(t.get("todaysChangePerc", 0), 2),
-            "volume":     t.get("day", {}).get("v"),
+            "change_pct": round(change_pct, 2),
+            "volume":     volume,
         })
     await cache_set(cache_key, movers, 30)
     return movers

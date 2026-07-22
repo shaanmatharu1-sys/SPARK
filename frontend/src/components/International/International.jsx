@@ -193,6 +193,7 @@ export default function International() {
   const etfs = data?.etfs?.etfs || []
   const adrs = data?.adrs?.adrs || []
   const fx = data?.fx?.fx || []
+  const fxAvail = data?.fx?.available !== false
 
   const pick = (symbol) => {
     const e = etfs.find(x => x.symbol === symbol)
@@ -273,7 +274,11 @@ export default function International() {
         <div className="panel-header"><span className="title">ADRs & FX</span></div>
         <div className="panel-body" style={{ padding: '4px 12px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gold-bright)', margin: '2px 0 4px' }}>FX</div>
-          {fx.map(f => (
+          {!fxAvail ? (
+            <div className="dim" style={{ fontSize: 10, padding: '4px 0 8px' }}>
+              FX unavailable — {data?.fx?.reason || 'not entitled on this data plan'}.
+            </div>
+          ) : fx.map(f => (
             <Row key={f.symbol} left={f.pair}
                  right={`${f.rate ?? '—'}  ${fmtPct(f.change_pct)}`} rightColor={chgColor(f.change_pct)} />
           ))}

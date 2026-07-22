@@ -150,7 +150,7 @@ function OverviewLayout({ chartSymbol, watchlistSymbols }) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '2fr 1fr 240px',
+      gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) 240px',
       gridTemplateRows:    '1fr 1fr',
       gap: 6,
       height: '100%',
@@ -180,7 +180,16 @@ function OptionsLayout() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr 1.2fr',
+      // Options Chain is an 11-column table (5 call + strike + 5 put) — the
+      // most column-dense panel in the app — so it gets meaningfully more
+      // width than the 1.2fr it had before, which squeezed every column to
+      // ~50px and made half the row illegible. minmax(0, Nfr), not bare
+      // Nfr: a bare fr track's minimum is its content's min-width, so a
+      // wide table inside it can blow the column past its fr share and
+      // throw off the other two columns entirely — minmax(0, …) pins the
+      // floor to 0 and lets the panel's own horizontal scroll (panel-body
+      // now has overflow-x: auto) handle anything that doesn't fit.
+      gridTemplateColumns: 'minmax(0, 0.85fr) minmax(0, 0.85fr) minmax(0, 1.5fr)',
       gridTemplateRows: '1fr 1fr',
       gap: 4,
       height: '100%',
@@ -197,7 +206,7 @@ function MacroLayout() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr 1fr',
+      gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)',
       gap: 4,
       height: '100%',
       minHeight: 0,
@@ -221,7 +230,7 @@ function QuantLayout() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '1fr 280px',
+      gridTemplateColumns: 'minmax(0, 1fr) 280px',
       gridTemplateRows: '1fr 1fr',
       gap: 4,
       height: '100%',
@@ -251,7 +260,7 @@ function GraphLayout() {
 
 function ResearchLayout() {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 4, height: '100%' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gridTemplateRows: '1fr 1fr', gap: 4, height: '100%' }}>
       <Pairs />
       <Correlation />
       <div style={{ gridColumn: '1 / 3' }}><OptionsResearch /></div>
@@ -269,7 +278,7 @@ function CreditLayout() {
 
 function PortfolioLayout() {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, height: '100%' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 4, height: '100%' }}>
       <Portfolio />
       <OptionsGreeksDashboard />
     </div>
@@ -358,7 +367,7 @@ function AltDataLayout() {
 
 function SupplyLayout() {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 6,
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr)', gap: 6,
                   height: '100%', minHeight: 0 }}>
       <div style={{ minHeight: 0 }}>
         <SupplyMap />
@@ -374,7 +383,7 @@ function MarketsLayout() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
+      gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
       gridTemplateRows: '1fr 1fr',
       gap: 4, height: '100%',
     }}>

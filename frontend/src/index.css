@@ -142,7 +142,7 @@ body {
 .panel-body {
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 /* ═══ Tables ═══════════════════════════════════════════════════ */
@@ -165,6 +165,7 @@ body {
   position: sticky;
   top: 0;
   background: var(--bg-header);
+  min-width: 46px;
 }
 .bbg-table th:first-child { text-align: left; }
 
@@ -174,6 +175,7 @@ body {
   border-bottom: 1px solid rgba(26,51,84,0.4);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  min-width: 46px;
 }
 
 /* at-the-money strike row (options chain) */

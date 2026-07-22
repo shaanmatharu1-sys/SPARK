@@ -34,8 +34,14 @@ export default function CommandBar({ recentPages, onNavigate, onSymbol }) {
 
   const isLast = query.trim().toUpperCase() === 'LAST'
 
+  // Strip spaces/hyphens on both sides before matching, so "altdata" finds
+  // "Alt-Data" and "multichart" finds "Multi-Chart" — a user typing a page
+  // name from memory has no reason to guess its exact punctuation.
+  const normalize = (s) => s.toLowerCase().replace(/[\s-]/g, '')
+  const normQuery = normalize(query)
+
   const pageMatches = isLast ? [] : ALL_PAGES
-    .filter(p => p.label.toLowerCase().includes(query.toLowerCase()))
+    .filter(p => normalize(p.label).includes(normQuery) || p.id.includes(normQuery))
     .map(p => ({ kind: 'page', id: p.id, label: p.label, sub: 'PAGE' }))
 
   const mnemonicMatches = isLast || !query ? [] : Object.keys(MNEMONIC_ALIASES)
