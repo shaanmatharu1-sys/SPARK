@@ -42,11 +42,15 @@ import GraphBuilder      from './components/GraphBuilder/GraphBuilder'
 import { SymbolProvider, useSymbol } from './hooks/useSymbol'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { useWatchlist, useWebSocketHealth } from './hooks/useMarketData'
+import { useRecentPages } from './hooks/useRecentPages'
 import LoginScreen from './components/Auth/LoginScreen'
 import { THEMES } from './themes'
 import Events           from './components/Events/Events'
 import SupplyMap       from './components/SupplyMap/SupplyMap'
 import PortWatch       from './components/SupplyMap/PortWatch'
+import SideMenu         from './components/common/SideMenu'
+import CommandBar        from './components/common/CommandBar'
+import WelcomePage        from './components/Welcome/WelcomePage'
 
 // ── Top bar clock ────────────────────────────────────────────────
 function UserMenu() {
@@ -137,35 +141,10 @@ function Clock() {
   )
 }
 
-// ── Tab definitions ──────────────────────────────────────────────
-const TABS = [
-  { id: 'overview',  label: 'OVERVIEW' },
-  { id: 'options',   label: 'OPTIONS' },
-  { id: 'quant',     label: 'QUANT' },
-  { id: 'research',  label: 'RESEARCH' },
-  { id: 'markets',   label: 'MARKETS' },
-  { id: 'world',     label: 'WORLD' },
-  { id: 'futures',   label: 'FUTURES' },
-  { id: 'multichart',label: 'MULTI' },
-  { id: 'regime',    label: 'REGIME' },
-  { id: 'events',    label: 'EVENTS' },
-  { id: 'altdata',   label: 'ALT-DATA' },
-  { id: 'whales',    label: 'WHALES' },
-  { id: 'network',   label: 'NETWORK' },
-  { id: 'ties',      label: 'TIES' },
-  { id: 'backtest',  label: 'BACKTEST' },
-  { id: 'arb',       label: 'ARB' },
-  { id: 'supply',    label: 'SUPPLY' },
-  { id: 'algo',      label: 'ALGO' },
-  { id: 'graph',     label: 'GRAPH' },
-  { id: 'portfolio', label: 'PORTFOLIO' },
-  { id: 'yield',     label: 'YIELD' },
-  { id: 'credit',    label: 'CREDIT' },
-  { id: 'macro',     label: 'MACRO' },
-  { id: 'news',      label: 'NEWS' },
-]
-
 // ── Layout for each tab ──────────────────────────────────────────
+// Page metadata (ids/labels/categories/mnemonic aliases) now lives in
+// lib/navigation.js, consumed by SideMenu/CommandBar/WelcomePage. Every
+// XLayout below is unchanged — only how you get to them changed.
 function OverviewLayout({ chartSymbol, watchlistSymbols }) {
   const cell = { minHeight: 0, minWidth: 0, overflow: 'hidden' }
   return (
@@ -452,153 +431,127 @@ function AuthGate() {
 }
 
 function AppInner() {
-  const [activeTab,    setActiveTab]    = useState('overview')
+  const [activeTab,    setActiveTab]    = useState(null)
   const { symbol: chartSymbol, setSymbol: setChartSymbol } = useSymbol()
   const [symbolInput,  setSymbolInput]  = useState(chartSymbol)
   useEffect(() => { setSymbolInput(chartSymbol) }, [chartSymbol])
   const [showWatchlist, setShowWatchlist] = useState(false)
   const { data: watchlistData, refresh: refreshWatchlist } = useWatchlist()
+  const { recentPages, recordVisit } = useRecentPages()
+
+  const navigate = (id) => { setActiveTab(id); recordVisit(id) }
 
   return (
-    <div style={{
-      display:       'flex',
-      flexDirection: 'column',
-      height:        '100vh',
-      background:    'var(--bg-base)',
-      overflow:      'hidden',
-    }}>
+    <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-base)', overflow: 'hidden' }}>
+      <SideMenu activeTab={activeTab} onSelect={navigate} />
 
-      {/* ── Top Bar ─────────────────────────────────────────────── */}
-      <div style={{
-        background:    'var(--bg-header)',
-        borderBottom:  '1px solid var(--border)',
-        padding:       '6px 12px',
-        display:       'flex',
-        alignItems:    'center',
-        justifyContent:'space-between',
-        flexShrink:    0,
-        height:        36,
-      }}>
-        {/* Logo + scrollable tabs */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: 1 }}>
-          <span style={{
-            fontFamily: 'var(--font-display)',
-            color: 'var(--gold)', fontWeight: 700, fontSize: 17,
-            letterSpacing: '0.12em', display: 'flex', alignItems: 'center', gap: 7,
-            flexShrink: 0,
-          }}>
-            SPARK
-          </span>
-          {/* Tabs — horizontally scrollable strip */}
-          <div className="tab-strip" style={{
-            display: 'flex', gap: 3, overflowX: 'auto', overflowY: 'hidden',
-            minWidth: 0, flex: 1, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
-          }}>
-            {TABS.map(t => (
-              <button
-                key={t.id}
-                ref={t.id === activeTab ? (el) => el?.scrollIntoView({ inline: 'nearest', block: 'nearest' }) : null}
-                onClick={() => setActiveTab(t.id)}
-                style={{
-                  background:   activeTab === t.id ? 'var(--bg-raised)' : 'transparent',
-                  color:        activeTab === t.id ? 'var(--gold-bright)' : 'var(--text-secondary)',
-                  border:       activeTab === t.id ? '1px solid var(--border-bright)' : '1px solid transparent',
-                  borderRadius: 6,
-                  padding:      '4px 13px',
-                  fontSize:     11,
-                  fontWeight:   activeTab === t.id ? 600 : 500,
-                  cursor:       'pointer',
-                  fontFamily:   'var(--font-ui)',
-                  letterSpacing: '0.05em',
-                  transition:   'all 0.15s ease',
-                  whiteSpace:   'nowrap',
-                  flexShrink:   0,
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
+
+        {/* ── Top Bar ─────────────────────────────────────────────── */}
+        <div style={{
+          background:    'var(--bg-header)',
+          borderBottom:  '1px solid var(--border)',
+          padding:       '6px 12px',
+          display:       'flex',
+          alignItems:    'center',
+          justifyContent:'space-between',
+          flexShrink:    0,
+          height:        36,
+        }}>
+          {/* Logo + command bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+            <span onClick={() => navigate(null)} style={{
+              fontFamily: 'var(--font-display)',
+              color: 'var(--gold)', fontWeight: 700, fontSize: 17,
+              letterSpacing: '0.12em', display: 'flex', alignItems: 'center', gap: 7,
+              flexShrink: 0, cursor: 'pointer',
+            }}>
+              SPARK
+            </span>
+            <CommandBar recentPages={recentPages} onNavigate={navigate}
+              onSymbol={(sym) => { setSymbolInput(sym); setChartSymbol(sym) }} />
+          </div>
+
+          {/* Symbol lookup + watchlist editor */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative',
+                        flexShrink: 0, marginLeft: 12 }}>
+            <button
+              onClick={() => setShowWatchlist(!showWatchlist)}
+              className="btn"
+              style={{ fontSize: 11 }}
+              title="Edit watchlist"
+            >
+              Watchlist
+            </button>
+            <NotificationBell />
+            <span className="dim" style={{ fontSize: 9 }}>CHART:</span>
+            <SymbolSearch
+              value={symbolInput}
+              onChange={setSymbolInput}
+              onSelect={(sym) => { setSymbolInput(sym); setChartSymbol(sym) }}
+              width={90}
+            />
+            {showWatchlist && (
+              <WatchlistManager onClose={() => setShowWatchlist(false)} onChange={refreshWatchlist} />
+            )}
+          </div>
+
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <UserMenu />
+            <Clock />
           </div>
         </div>
 
-        {/* Symbol lookup + watchlist editor */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative',
-                      flexShrink: 0, marginLeft: 12 }}>
-          <button
-            onClick={() => setShowWatchlist(!showWatchlist)}
-            className="btn"
-            style={{ fontSize: 11 }}
-            title="Edit watchlist"
-          >
-            Watchlist
-          </button>
-          <NotificationBell />
-          <span className="dim" style={{ fontSize: 9 }}>CHART:</span>
-          <SymbolSearch
-            value={symbolInput}
-            onChange={setSymbolInput}
-            onSelect={(sym) => { setSymbolInput(sym); setChartSymbol(sym) }}
-            width={90}
-          />
-          {showWatchlist && (
-            <WatchlistManager onClose={() => setShowWatchlist(false)} onChange={refreshWatchlist} />
-          )}
+        {/* ── Main Content ─────────────────────────────────────────── */}
+        <div style={{ flex: 1, padding: 4, overflow: 'hidden', minHeight: 0 }}>
+          {activeTab == null && <WelcomePage recentPages={recentPages} onNavigate={navigate} />}
+          {activeTab === 'overview' && <OverviewLayout chartSymbol={chartSymbol} watchlistSymbols={watchlistData?.symbols} />}
+          {activeTab === 'options'  && <OptionsLayout />}
+          {activeTab === 'quant'    && <QuantLayout />}
+          {activeTab === 'research' && <ResearchLayout />}
+          {activeTab === 'markets'  && <MarketsLayout />}
+          {activeTab === 'world'    && <WorldLayout />}
+          {activeTab === 'futures'  && <FuturesLayout />}
+          {activeTab === 'multichart' && <MultiChartLayout />}
+          {activeTab === 'regime'   && <RegimeLayout />}
+          {activeTab === 'events'   && <EventsLayout />}
+          {activeTab === 'altdata'  && <AltDataLayout />}
+          {activeTab === 'whales'   && <WhalesLayout />}
+          {activeTab === 'network'  && <NetworkLayout />}
+          {activeTab === 'ties'     && <TiesLayout />}
+          {activeTab === 'backtest' && <BacktestLayout />}
+          {activeTab === 'arb'      && <ArbLayout />}
+          {activeTab === 'supply'   && <SupplyLayout />}
+          {activeTab === 'yield'    && <YieldLayout />}
+          {activeTab === 'algo'     && <AlgoLayout />}
+          {activeTab === 'graph'    && <GraphLayout />}
+          {activeTab === 'portfolio' && <PortfolioLayout />}
+          {activeTab === 'credit'   && <CreditLayout />}
+          {activeTab === 'macro'    && <MacroLayout />}
+          {activeTab === 'news'     && <NewsLayout />}
         </div>
 
-        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <UserMenu />
-          <Clock />
+        {/* ── Status Bar ───────────────────────────────────────────── */}
+        <div style={{
+          background:   'var(--bg-header)',
+          borderTop:    '1px solid var(--border)',
+          padding:      '3px 12px',
+          display:      'flex',
+          alignItems:   'center',
+          gap:          16,
+          flexShrink:   0,
+          height:       20,
+        }}>
+          <span className="dim" style={{ fontSize: 8 }}>
+            DATA: Polygon.io · FRED · CNN F&G · NewsAPI
+          </span>
+          <span className="dim" style={{ fontSize: 8 }}>
+            BACKEND: {import.meta.env.VITE_API_BASE ? 'cloud' : 'localhost:8000'}
+          </span>
+          <span style={{ color: 'var(--text-dim)', fontSize: 8 }}>
+            Press ENTER in symbol box to load chart
+          </span>
         </div>
-      </div>
-
-      {/* ── Main Content ─────────────────────────────────────────── */}
-      <div style={{ flex: 1, padding: 4, overflow: 'hidden', minHeight: 0 }}>
-        {activeTab === 'overview' && <OverviewLayout chartSymbol={chartSymbol} watchlistSymbols={watchlistData?.symbols} />}
-        {activeTab === 'options'  && <OptionsLayout />}
-        {activeTab === 'quant'    && <QuantLayout />}
-        {activeTab === 'research' && <ResearchLayout />}
-        {activeTab === 'markets'  && <MarketsLayout />}
-        {activeTab === 'world'    && <WorldLayout />}
-        {activeTab === 'futures'  && <FuturesLayout />}
-        {activeTab === 'multichart' && <MultiChartLayout />}
-        {activeTab === 'regime'   && <RegimeLayout />}
-        {activeTab === 'events'   && <EventsLayout />}
-        {activeTab === 'altdata'  && <AltDataLayout />}
-        {activeTab === 'whales'   && <WhalesLayout />}
-        {activeTab === 'network'  && <NetworkLayout />}
-        {activeTab === 'ties'     && <TiesLayout />}
-        {activeTab === 'backtest' && <BacktestLayout />}
-        {activeTab === 'arb'      && <ArbLayout />}
-        {activeTab === 'supply'   && <SupplyLayout />}
-        {activeTab === 'yield'    && <YieldLayout />}
-        {activeTab === 'algo'     && <AlgoLayout />}
-        {activeTab === 'graph'    && <GraphLayout />}
-        {activeTab === 'portfolio' && <PortfolioLayout />}
-        {activeTab === 'credit'   && <CreditLayout />}
-        {activeTab === 'macro'    && <MacroLayout />}
-        {activeTab === 'news'     && <NewsLayout />}
-      </div>
-
-      {/* ── Status Bar ───────────────────────────────────────────── */}
-      <div style={{
-        background:   'var(--bg-header)',
-        borderTop:    '1px solid var(--border)',
-        padding:      '3px 12px',
-        display:      'flex',
-        alignItems:   'center',
-        gap:          16,
-        flexShrink:   0,
-        height:       20,
-      }}>
-        <span className="dim" style={{ fontSize: 8 }}>
-          DATA: Polygon.io · FRED · CNN F&G · NewsAPI
-        </span>
-        <span className="dim" style={{ fontSize: 8 }}>
-          BACKEND: {import.meta.env.VITE_API_BASE ? 'cloud' : 'localhost:8000'}
-        </span>
-        <span style={{ color: 'var(--text-dim)', fontSize: 8 }}>
-          Press ENTER in symbol box to load chart
-        </span>
       </div>
     </div>
   )
