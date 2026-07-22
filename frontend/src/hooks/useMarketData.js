@@ -421,6 +421,18 @@ export async function runPresetBacktest(symbol, strategy, days = 730, costBps = 
   return r.json()
 }
 
+// ── Graph Builder — formula bar -> chart (Bloomberg GP-style) ──
+export function useGraphFunctions() {
+  return useFetch('/quant/graph/functions', null)
+}
+export async function runGraphEval(expr, days = 365, timespan = 'day') {
+  const r = await fetch(`${API}/quant/graph/eval?days=${days}&timespan=${timespan}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expr }),
+  })
+  return r.json()
+}
+
 // ── Full-market symbol search (not just the curated S&P universe) ──
 export async function searchSymbols(query, limit = 12) {
   if (!query?.trim()) return []

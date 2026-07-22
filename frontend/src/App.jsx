@@ -38,6 +38,7 @@ import Regime            from './components/Regime/Regime'
 import AltData          from './components/AltData/AltData'
 import BacktestTab      from './components/Backtest/BacktestTab'
 import Arbitrage        from './components/Arbitrage/Arbitrage'
+import GraphBuilder      from './components/GraphBuilder/GraphBuilder'
 import { SymbolProvider, useSymbol } from './hooks/useSymbol'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { useWatchlist, useWebSocketHealth } from './hooks/useMarketData'
@@ -156,6 +157,7 @@ const TABS = [
   { id: 'arb',       label: 'ARB' },
   { id: 'supply',    label: 'SUPPLY' },
   { id: 'algo',      label: 'ALGO' },
+  { id: 'graph',     label: 'GRAPH' },
   { id: 'portfolio', label: 'PORTFOLIO' },
   { id: 'yield',     label: 'YIELD' },
   { id: 'credit',    label: 'CREDIT' },
@@ -256,6 +258,14 @@ function AlgoLayout() {
   return (
     <div style={{ height: '100%', maxWidth: 900, margin: '0 auto' }}>
       <Algo />
+    </div>
+  )
+}
+
+function GraphLayout() {
+  return (
+    <div style={{ height: '100%', maxWidth: 1000, margin: '0 auto' }}>
+      <GraphBuilder />
     </div>
   )
 }
@@ -562,6 +572,7 @@ function AppInner() {
         {activeTab === 'supply'   && <SupplyLayout />}
         {activeTab === 'yield'    && <YieldLayout />}
         {activeTab === 'algo'     && <AlgoLayout />}
+        {activeTab === 'graph'    && <GraphLayout />}
         {activeTab === 'portfolio' && <PortfolioLayout />}
         {activeTab === 'credit'   && <CreditLayout />}
         {activeTab === 'macro'    && <MacroLayout />}
