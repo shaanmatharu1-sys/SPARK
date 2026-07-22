@@ -141,8 +141,10 @@ async def create_algo(algo: CreateAlgo, current_user: User = Depends(get_current
     cfg_dict = asdict(cfg)
     db.add(AlgoConfigRow(id=aid, user_id=current_user.id, name=algo.name, config=cfg_dict))
     await db.commit()
-    # Initialize portfolio with the algo's capital
+    # Initialize portfolio with the algo's capital, seeding the equity curve
+    # with a starting point so the chart isn't empty before the first /run.
     pf = PaperPortfolio(name=aid, starting_cash=algo.capital)
+    pf.record_equity({})
     await _save_portfolio(db, aid, pf)
     return {"created": aid, "config": cfg_dict}
 
@@ -175,6 +177,7 @@ async def run_algo(algo_id: str, current_user: User = Depends(get_current_user),
         r = pf.target_position(sym, target_shares, px, strategy=cfg.strategy)
         if "filled" in r:
             orders.append(r["filled"])
+    pf.record_equity(prices)
     await _save_portfolio(db, algo_id, pf)
 
     return {
@@ -205,6 +208,7 @@ async def reset_algo(algo_id: str, current_user: User = Depends(get_current_user
     if not row:
         return {"error": "algo not found"}
     pf = PaperPortfolio(name=algo_id, starting_cash=row.config["capital"])
+    pf.record_equity({})
     await _save_portfolio(db, algo_id, pf)
     return {"reset": algo_id}
 

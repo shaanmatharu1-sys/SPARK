@@ -1,6 +1,28 @@
 import React, { useState } from 'react'
-import { useAlgoList, useAlgoTemplates, useIndicators, algoApi } from '../../hooks/useMarketData'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { useAlgoList, useAlgoTemplates, useIndicators, algoApi, runCustomBacktest } from '../../hooks/useMarketData'
 import { RuleEditor } from '../Backtest/BacktestTab'
+
+function EquityChart({ points, dataKey = 'equity', color = 'var(--gold)', height = 140 }) {
+  if (!points || points.length < 2) {
+    return <div className="dim" style={{ fontSize: 10, padding: '20px 0', textAlign: 'center' }}>
+      Not enough history yet — run it a few times to build the curve.
+    </div>
+  }
+  return (
+    <div style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={points}>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="2 2" />
+          <XAxis dataKey="i" stroke="var(--text-dim)" fontSize={9} tick={false} />
+          <YAxis stroke="var(--text-dim)" fontSize={9} domain={['auto', 'auto']} width={56} />
+          <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)', fontSize: 11 }} />
+          <Line type="monotone" dataKey={dataKey} stroke={color} dot={false} strokeWidth={1.5} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
 
 function Pnl({ value, pct }) {
   if (value == null) return <span className="dim">—</span>
@@ -50,6 +72,11 @@ function AlgoCard({ algo, onRun, onReset, onDelete, busy }) {
             <div><span className="dim">Realized </span><Pnl value={pf.realized_pnl} /></div>
             <div><span className="dim">Unrealized </span><Pnl value={pf.unrealized_pnl} /></div>
             <div><span className="dim">Fills </span><span className="mono">{pf.n_fills}</span></div>
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <div className="label" style={{ marginBottom: 4 }}>Equity Curve</div>
+            <EquityChart points={pf.equity_history?.map((p, i) => ({ i, equity: p.equity }))} />
           </div>
 
           {pf.positions?.length > 0 && (
@@ -108,6 +135,16 @@ export default function Algo() {
   const [modelName, setModelName] = useState('My Custom Model')
   const [entry, setEntry] = useState([{ indicator: 'rsi', op: '<', value: 30, param: 14 }])
   const [exit, setExit]   = useState([{ indicator: 'rsi', op: '>', value: 70, param: 14 }])
+  const [preview, setPreview] = useState(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  const previewSymbol = customUniverse.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)[0]
+  const runPreview = async () => {
+    if (!previewSymbol) return
+    setPreviewLoading(true)
+    try { setPreview(await runCustomBacktest(previewSymbol, entry, exit, 730)) }
+    finally { setPreviewLoading(false) }
+  }
 
   const createFromTemplate = async (t) => {
     const universe = customUniverse.trim()
@@ -223,10 +260,30 @@ export default function Algo() {
                 </div>
                 <RuleEditor rules={entry} setRules={setEntry} indicators={indicators} label="ENTRY (all must hold)" />
                 <RuleEditor rules={exit} setRules={setExit} indicators={indicators} label="EXIT (any triggers)" />
-                <button className="btn active" onClick={createCustom}
-                  disabled={!customUniverse.trim() || !entry.length}>
-                  Create Custom Model
-                </button>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                  <button className="btn" onClick={runPreview} disabled={!previewSymbol || previewLoading}>
+                    {previewLoading ? 'Backtesting…' : `Preview backtest${previewSymbol ? ` (${previewSymbol})` : ''}`}
+                  </button>
+                  <button className="btn active" onClick={createCustom}
+                    disabled={!customUniverse.trim() || !entry.length}>
+                    Create Custom Model
+                  </button>
+                </div>
+                {preview?.error && <div style={{ color: 'var(--red)', fontSize: 11, marginBottom: 10 }}>{preview.error}</div>}
+                {preview?.equity_curve && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="label" style={{ marginBottom: 4 }}>
+                      2yr backtest preview — {previewSymbol} only{customUniverse.includes(',') ? ' (first symbol in universe)' : ''}
+                    </div>
+                    <EquityChart points={preview.equity_curve.map((e, i) => ({ i, equity: e }))} color="var(--steel-bright)" />
+                    {preview.stats && (
+                      <div className="dim" style={{ fontSize: 10, marginTop: 4 }}>
+                        Total return: <Pnl value={preview.stats.total_return * 100} pct /> ·
+                        {' '}Sharpe {preview.stats.sharpe?.toFixed(2)} · Max DD {(preview.stats.max_drawdown * 100).toFixed(1)}%
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>

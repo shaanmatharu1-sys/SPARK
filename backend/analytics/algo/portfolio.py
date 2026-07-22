@@ -54,6 +54,12 @@ class PaperPortfolio:
         self.slippage_bps  = slippage_bps
         self.positions: dict[str, Position] = {}
         self.fills: list[Fill] = []
+        self.equity_history: list[dict] = []  # [{ts, equity}, ...] — one point per /run call
+
+    def record_equity(self, prices: dict[str, float]):
+        """Append the current equity as a point on the live equity curve. Call once per /run."""
+        self.equity_history.append({"ts": time.time(), "equity": round(self.equity(prices), 2)})
+        self.equity_history = self.equity_history[-500:]  # cap history
 
     # ── Order simulation ──────────────────────────────────────────
     def market_order(self, symbol: str, side: str, quantity: float,
@@ -141,6 +147,7 @@ class PaperPortfolio:
             ],
             "n_fills": len(self.fills),
             "recent_fills": [asdict(f) for f in self.fills[-20:]],
+            "equity_history": self.equity_history,
         }
 
     # ── Persistence ───────────────────────────────────────────────
@@ -152,6 +159,7 @@ class PaperPortfolio:
             "slippage_bps": self.slippage_bps,
             "positions": {s: asdict(p) for s, p in self.positions.items()},
             "fills": [asdict(f) for f in self.fills[-500:]],  # cap history
+            "equity_history": self.equity_history[-500:],
         }
 
     @classmethod
@@ -160,9 +168,11 @@ class PaperPortfolio:
         pf.cash = d["cash"]
         pf.positions = {s: Position(**p) for s, p in d.get("positions", {}).items()}
         pf.fills = [Fill(**f) for f in d.get("fills", [])]
+        pf.equity_history = d.get("equity_history", [])
         return pf
 
     def reset(self):
         self.cash = self.starting_cash
         self.positions = {}
         self.fills = []
+        self.equity_history = []
