@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { useNews } from '../../hooks/useMarketData'
 
+const MA_QUERY = 'merger OR acquisition OR takeover OR buyout'
+
 export default function NewsFeed() {
   const [query, setQuery] = useState('')
   const [submitted, setSubmitted] = useState(null)
@@ -10,7 +12,15 @@ export default function NewsFeed() {
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
         <span className="title">News Feed</span>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button
+            className={`btn ${submitted === MA_QUERY ? 'active' : ''}`}
+            style={{ fontSize: 9, padding: '2px 7px' }}
+            title="Mergers & acquisitions (Bloomberg MA)"
+            onClick={() => { setQuery(''); setSubmitted(submitted === MA_QUERY ? null : MA_QUERY) }}
+          >
+            M&amp;A
+          </button>
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}

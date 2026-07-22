@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import {
   useEarnings, useFilings, useSocial,
   useTickerDetails, useShortInterest, useDividends, useSplits, useAnalystRatings,
+  useRelativeValuation,
 } from '../../hooks/useMarketData'
 
 function fmtNum(n) {
@@ -283,6 +284,42 @@ function Social({ symbol }) {
   )
 }
 
+function RelativeValuation({ symbol }) {
+  const [peers, setPeers] = useState('')
+  const symbols = [symbol, ...peers.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)].slice(0, 4)
+  const { data, loading } = useRelativeValuation(symbols)
+
+  return (
+    <div style={{ padding: 12 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 12 }}>
+        <span className="dim" style={{ fontSize: 10 }}>COMPARE {symbol} VS</span>
+        <input className="input" style={{ width: 160, fontFamily: 'var(--font-mono)' }}
+          placeholder="e.g. MSFT, GOOGL, AMZN" value={peers}
+          onChange={e => setPeers(e.target.value.toUpperCase())} />
+      </div>
+      {loading && <div className="dim" style={{ fontSize: 11 }}>Loading…</div>}
+      {data?.rows?.length > 0 && (
+        <table className="bbg-table">
+          <thead><tr><th>SYMBOL</th><th>NAME</th><th>PRICE</th><th>TTM EPS</th><th>P/E</th><th>MKT CAP</th><th>SECTOR</th></tr></thead>
+          <tbody>
+            {data.rows.map(r => (
+              <tr key={r.symbol}>
+                <td style={{ color: 'var(--gold)', fontWeight: 600 }}>{r.symbol}</td>
+                <td className="dim">{r.name}</td>
+                <td>{r.price != null ? `$${r.price.toFixed(2)}` : '—'}</td>
+                <td>{r.ttm_eps != null ? `$${r.ttm_eps.toFixed(2)}` : '—'}</td>
+                <td style={{ color: 'var(--gold-bright)', fontWeight: 600 }}>{r.pe_ratio ?? '—'}</td>
+                <td>{fmtNum(r.market_cap)}</td>
+                <td className="dim" style={{ fontSize: 10 }}>{r.sector}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
 export default function CompanyDetail() {
   const [symbol, setSymbol] = useState('AAPL')
   const [input, setInput] = useState('AAPL')
@@ -293,7 +330,7 @@ export default function CompanyDetail() {
       <div className="panel-header">
         <span className="title">Company Detail</span>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {['profile', 'filings', 'earnings', 'dividends', 'ratings', 'social'].map(t => (
+          {['profile', 'filings', 'earnings', 'dividends', 'ratings', 'social', 'rv'].map(t => (
             <button key={t} className={`btn ${tab === t ? 'active' : ''}`}
               onClick={() => setTab(t)}>{t.toUpperCase()}</button>
           ))}
@@ -309,6 +346,7 @@ export default function CompanyDetail() {
         {tab === 'dividends' && <Dividends symbol={symbol} />}
         {tab === 'ratings'   && <Ratings symbol={symbol} />}
         {tab === 'social'    && <Social symbol={symbol} />}
+        {tab === 'rv'        && <RelativeValuation symbol={symbol} />}
       </div>
     </div>
   )

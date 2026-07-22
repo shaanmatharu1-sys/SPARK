@@ -2,7 +2,7 @@
 from fastapi import APIRouter
 from services.international_client import (
     fetch_world_indices, fetch_country_etfs, fetch_adrs, fetch_fx,
-    fetch_international_all,
+    fetch_international_all, fetch_country_directory,
 )
 
 router = APIRouter(prefix="/international", tags=["international"])
@@ -36,3 +36,9 @@ async def adrs():
 async def fx():
     """FX rates (Polygon FX)."""
     return await fetch_fx()
+
+
+@router.get("/directory")
+async def directory():
+    """CBQ-style country directory — index/ETF/ADRs/FX grouped by country."""
+    return await fetch_country_directory()

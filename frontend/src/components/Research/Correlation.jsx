@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { useCorrelation, useMacroMatrix } from '../../hooks/useMarketData'
+import { useCorrelation, useMacroMatrix, fetchBeta } from '../../hooks/useMarketData'
+import { useSymbol } from '../../hooks/useSymbol'
 
 // Correlation -> color: +1 green, 0 dark, -1 red
 function corrColor(c) {
@@ -46,6 +47,66 @@ function Matrix({ labels, rowLabels, matrix }) {
   )
 }
 
+function BetaPanel() {
+  const { symbol } = useSymbol()
+  const [betaSymbol, setBetaSymbol] = useState(symbol)
+  const [benchmark, setBenchmark] = useState('SPY')
+  const [result, setResult] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  const compute = async () => {
+    if (!betaSymbol.trim() || !benchmark.trim()) return
+    setLoading(true)
+    try { setResult(await fetchBeta(betaSymbol.trim().toUpperCase(), benchmark.trim().toUpperCase())) }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 16 }}>
+        <span className="dim" style={{ fontSize: 10 }}>SYMBOL</span>
+        <input className="input" style={{ width: 70 }} value={betaSymbol}
+          onChange={e => setBetaSymbol(e.target.value.toUpperCase())}
+          onKeyDown={e => e.key === 'Enter' && compute()} />
+        <span className="dim" style={{ fontSize: 10 }}>VS</span>
+        <input className="input" style={{ width: 70 }} value={benchmark}
+          onChange={e => setBenchmark(e.target.value.toUpperCase())}
+          onKeyDown={e => e.key === 'Enter' && compute()} />
+        <button className="btn active" onClick={compute} disabled={loading}>
+          {loading ? 'Computing…' : 'Compute'}
+        </button>
+      </div>
+      {result?.error && <div style={{ color: 'var(--red)', fontSize: 11 }}>{result.error}</div>}
+      {result?.beta != null && (
+        <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ background: 'var(--bg-raised)', border: '1px solid var(--border)',
+                        borderRadius: 5, padding: '10px 16px', minWidth: 100 }}>
+            <div className="dim" style={{ fontSize: 9, textTransform: 'uppercase' }}>Beta</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 20, fontWeight: 600,
+                          color: result.beta >= 1 ? 'var(--red)' : 'var(--green)' }}>
+              {result.beta.toFixed(2)}
+            </div>
+          </div>
+          <div style={{ background: 'var(--bg-raised)', border: '1px solid var(--border)',
+                        borderRadius: 5, padding: '10px 16px', minWidth: 100 }}>
+            <div className="dim" style={{ fontSize: 9, textTransform: 'uppercase' }}>Correlation</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 20, fontWeight: 600 }}>
+              {result.correlation.toFixed(2)}
+            </div>
+          </div>
+          <div className="dim" style={{ fontSize: 10, alignSelf: 'center' }}>
+            {result.n_periods} daily returns · {result.days}d window
+          </div>
+        </div>
+      )}
+      {!result && <div className="dim" style={{ fontSize: 11 }}>
+        Beta measures how much {betaSymbol || 'a symbol'} moves relative to {benchmark || 'a benchmark'} —
+        {'>'}1 means more volatile than the benchmark, {'<'}1 means less.
+      </div>}
+    </div>
+  )
+}
+
 export default function Correlation() {
   const [mode, setMode] = useState('assets')
   const { data: corr, loading: cl } = useCorrelation('watchlist')
@@ -60,6 +121,8 @@ export default function Correlation() {
             onClick={() => setMode('assets')}>ASSETS</button>
           <button className={`btn ${mode === 'macro' ? 'active' : ''}`}
             onClick={() => setMode('macro')}>MACRO</button>
+          <button className={`btn ${mode === 'beta' ? 'active' : ''}`}
+            onClick={() => setMode('beta')}>BETA</button>
         </div>
       </div>
       <div className="panel-body">
@@ -73,6 +136,7 @@ export default function Correlation() {
           : macro?.matrix ? <Matrix labels={macro.factors} rowLabels={macro.assets} matrix={macro.matrix} />
           : <div style={{ padding: 16, color: 'var(--red)' }}>{macro?.error || 'No data'}</div>
         )}
+        {mode === 'beta' && <BetaPanel />}
         {mode === 'assets' && corr?.most_correlated && (
           <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', fontSize: 10 }}>
             <span className="dim">Most correlated: </span>

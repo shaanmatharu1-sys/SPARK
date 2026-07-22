@@ -5,6 +5,8 @@ import {
 } from 'recharts'
 import { useInternational, useBars } from '../../hooks/useMarketData'
 import { WORLD_LAND } from '../SupplyMap/worldGeo'
+import CountryDirectory from './CountryDirectory'
+import IMAPHeatmap from './IMAPHeatmap'
 
 const chgColor = (p) => p == null ? 'var(--text-dim)' : p > 0 ? 'var(--green)' : p < 0 ? 'var(--red)' : 'var(--text)'
 const fmtPct = (p) => p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(2)}%`
@@ -184,6 +186,7 @@ function CountryDetail({ symbol, name }) {
 export default function International() {
   const { data, loading } = useInternational()
   const [selected, setSelected] = useState(null) // { symbol, name }
+  const [mode, setMode] = useState('overview') // overview | directory | heatmap
 
   const indices = data?.indices?.indices || []
   const indicesAvail = data?.indices?.available !== false
@@ -196,9 +199,37 @@ export default function International() {
     if (e) setSelected({ symbol: e.symbol, name: e.name })
   }
 
+  const ModeToggle = () => (
+    <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+      <button className={`btn ${mode === 'overview' ? 'active' : ''}`} onClick={() => setMode('overview')}>Overview</button>
+      <button className={`btn ${mode === 'directory' ? 'active' : ''}`} onClick={() => setMode('directory')}>Country Directory</button>
+      <button className={`btn ${mode === 'heatmap' ? 'active' : ''}`} onClick={() => setMode('heatmap')}>Heatmap</button>
+    </div>
+  )
+
+  if (mode === 'directory') {
+    return (
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+        <ModeToggle />
+        <div style={{ flex: 1, minHeight: 0 }}><CountryDirectory /></div>
+      </div>
+    )
+  }
+
+  if (mode === 'heatmap') {
+    return (
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+        <ModeToggle />
+        <div style={{ flex: 1, minHeight: 0 }}><IMAPHeatmap /></div>
+      </div>
+    )
+  }
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr',
-                  gap: 6, height: '100%', minHeight: 0 }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+      <ModeToggle />
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr',
+                    gap: 6, minHeight: 0 }}>
       {/* World map + indices */}
       <div className="panel" style={{ minHeight: 0, gridRow: '1 / 3' }}>
         <div className="panel-header"><span className="title">Global Markets Map</span></div>
@@ -253,6 +284,7 @@ export default function International() {
                  onClick={() => setSelected({ symbol: a.symbol, name: a.country })} />
           ))}
         </div>
+      </div>
       </div>
     </div>
   )

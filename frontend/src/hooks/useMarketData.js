@@ -68,6 +68,9 @@ export function useNews(query = null) {
   const qs = query ? `?query=${encodeURIComponent(query)}` : ''
   return useFetch(`/news/${qs}`, 300_000)
 }
+export function useMANews() {
+  return useFetch('/news/ma', 300_000)
+}
 
 export function useFearGreed() {
   return useFetch('/sentiment/fear-greed', 600_000)
@@ -203,6 +206,9 @@ export function useShortInterest(symbol) {
 }
 export function useAnalystRatings(symbol) {
   return useFetch(symbol ? `/fundamentals/${symbol}/ratings` : null, 3600_000)
+}
+export function useRelativeValuation(symbols) {
+  return useFetch(symbols?.length ? `/fundamentals/relative-valuation?symbols=${symbols.join(',')}` : null, null)
 }
 
 // ── Watchlist ──
@@ -377,6 +383,9 @@ export function useCompanyTies(symbol) {
 export function useInternational() {
   return useFetch('/international/all', 60_000)
 }
+export function useCountryDirectory() {
+  return useFetch('/international/directory', 60_000)
+}
 
 // ── Futures (yfinance quotes + CFTC COT positioning) ──
 export function useFuturesAll() {
@@ -430,6 +439,12 @@ export async function runGraphEval(expr, days = 365, timespan = 'day') {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ expr }),
   })
+  return r.json()
+}
+
+// ── Beta calculator ──
+export async function fetchBeta(symbol, benchmark = 'SPY', days = 365) {
+  const r = await fetch(`${API}/quant/beta/${symbol}?benchmark=${benchmark}&days=${days}`)
   return r.json()
 }
 

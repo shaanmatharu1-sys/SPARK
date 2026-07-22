@@ -36,6 +36,37 @@ async def get_signals(symbol: str, days: int = Query(default=365)):
     return compute_signals(closes, symbol.upper())
 
 
+@router.get("/beta/{symbol}")
+async def get_beta(symbol: str, benchmark: str = Query(default="SPY"), days: int = Query(default=365)):
+    """
+    GET /quant/beta/AAPL?benchmark=SPY&days=365 — Beta of `symbol` against
+    `benchmark` (Bloomberg BETA function), computed from daily simple
+    returns over the trailing window: cov(symbol, benchmark) / var(benchmark).
+    """
+    sym_closes, bench_closes = await asyncio.gather(
+        _get_closes(symbol, days), _get_closes(benchmark, days)
+    )
+    if len(sym_closes) < 30 or len(bench_closes) < 30:
+        return {"error": "insufficient price history", "symbol": symbol, "benchmark": benchmark}
+
+    n = min(len(sym_closes), len(bench_closes))
+    sym_arr, bench_arr = np.array(sym_closes[-n:]), np.array(bench_closes[-n:])
+    sym_rets = sym_arr[1:] / sym_arr[:-1] - 1
+    bench_rets = bench_arr[1:] / bench_arr[:-1] - 1
+
+    bench_var = bench_rets.var()
+    if bench_var == 0:
+        return {"error": "benchmark has zero variance over this window"}
+    beta = float(np.cov(sym_rets, bench_rets)[0, 1] / bench_var)
+    corr = float(np.corrcoef(sym_rets, bench_rets)[0, 1])
+
+    return {
+        "symbol": symbol.upper(), "benchmark": benchmark.upper(),
+        "days": days, "n_periods": n,
+        "beta": round(beta, 4), "correlation": round(corr, 4),
+    }
+
+
 @router.get("/strategies")
 async def list_strategies():
     """GET /quant/strategies — Available backtest strategies and their params."""

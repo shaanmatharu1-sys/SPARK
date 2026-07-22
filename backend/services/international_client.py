@@ -227,3 +227,42 @@ async def fetch_international_all():
         "adrs":    safe(adrs, "adrs"),
         "fx":      safe(fx, "fx"),
     }
+
+
+# FX pair -> country/region name, for grouping FX into the country directory
+# below (WORLD_INDICES/COUNTRY_ETFS/ADRS already carry a country field;
+# FX_PAIRS only carries the pair label, so this fills that gap).
+_CURRENCY_COUNTRY = {
+    "EUR/USD": "Eurozone", "USD/JPY": "Japan", "GBP/USD": "UK", "USD/CNH": "China",
+    "USD/CAD": "Canada", "AUD/USD": "Australia", "USD/CHF": "Switzerland", "USD/KRW": "Korea",
+}
+
+
+async def fetch_country_directory():
+    """
+    CBQ-style country directory: the same indices/ETFs/ADRs/FX
+    fetch_international_all() already pulls, regrouped by country instead
+    of by asset type — no new data source, just a different shape for
+    browsing "everything about country X" in one place.
+    """
+    all_data = await fetch_international_all()
+    countries: dict[str, dict] = {}
+
+    def bucket(name):
+        return countries.setdefault(
+            name, {"country": name, "index": None, "etf": None, "adrs": [], "fx": None})
+
+    for row in (all_data.get("indices") or {}).get("indices") or []:
+        bucket(row["country"])["index"] = row
+    for row in (all_data.get("etfs") or {}).get("etfs") or []:
+        if row.get("region") == "Broad":
+            continue  # regional baskets (EFA/VWO/ACWX), not a single country
+        bucket(row["name"])["etf"] = row
+    for row in (all_data.get("adrs") or {}).get("adrs") or []:
+        bucket(row["country"])["adrs"].append(row)
+    for row in (all_data.get("fx") or {}).get("fx") or []:
+        country = _CURRENCY_COUNTRY.get(row["pair"])
+        if country:
+            bucket(country)["fx"] = row
+
+    return {"countries": sorted(countries.values(), key=lambda c: c["country"])}
