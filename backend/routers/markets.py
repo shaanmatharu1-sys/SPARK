@@ -94,8 +94,8 @@ async def get_vessels(limit: int = Query(default=500)):
 
 
 @router.get("/flights")
-async def get_flights(limit: int = Query(default=500)):
-    """Live flight positions from OpenSky Network for the supply-routes map."""
+async def get_flights(limit: int = Query(default=3000)):
+    """Live flight positions (adsb.lol/airplanes.live) for the supply-routes map."""
     from services.flight_client import get_flights as _gf
     return _gf(limit)
 

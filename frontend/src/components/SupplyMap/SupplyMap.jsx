@@ -2,14 +2,35 @@ import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { useVessels, usePortWatch, useFlights } from '../../hooks/useMarketData'
 import { WORLD_LAND } from './worldGeo'
 
-// Base equirectangular projection (lon/lat -> base x/y), then a view transform
-// (scale + pan) is applied on top so coastlines, vessels, and labels stay aligned.
+// An equirectangular projection needs a 2:1 width:height ratio (360deg lon /
+// 180deg lat) to render undistorted — stretching lon across the full canvas
+// width and lat across the full canvas height independently (the previous
+// version) meant any panel that wasn't exactly 2:1 visibly squished or
+// stretched every continent, which is what actually caused flights/vessels
+// to look "off" relative to the coastlines even though their coordinates
+// were mathematically exact (verified directly: computed pixel position
+// from a flight's real lat/lon matched its rendered x/y to the sub-pixel).
+// Fix: compute a letterboxed 2:1 map area inside the canvas and project
+// into that, instead of the canvas's raw (and usually non-2:1) dimensions.
+function mapDims(W, H) {
+  const naturalAspect = 2 // 360 / 180
+  const containerAspect = W / H
+  if (containerAspect > naturalAspect) {
+    const mapH = H, mapW = H * naturalAspect
+    return { mapW, mapH, offsetX: (W - mapW) / 2, offsetY: 0 }
+  }
+  const mapW = W, mapH = W / naturalAspect
+  return { mapW, mapH, offsetX: 0, offsetY: (H - mapH) / 2 }
+}
+
 function baseProject(lon, lat, W, H) {
-  return [(lon + 180) / 360 * W, (90 - lat) / 180 * H]
+  const { mapW, mapH, offsetX, offsetY } = mapDims(W, H)
+  return [offsetX + (lon + 180) / 360 * mapW, offsetY + (90 - lat) / 180 * mapH]
 }
 // Inverse of baseProject, used for the cursor lat/lon readout.
 function unproject(bx, by, W, H) {
-  return [bx / W * 360 - 180, 90 - by / H * 180]
+  const { mapW, mapH, offsetX, offsetY } = mapDims(W, H)
+  return [(bx - offsetX) / mapW * 360 - 180, 90 - (by - offsetY) / mapH * 180]
 }
 
 const CHOKEPOINTS = [

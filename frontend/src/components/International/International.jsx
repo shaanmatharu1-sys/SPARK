@@ -46,7 +46,16 @@ function WorldPerfMap({ etfs }) {
     const ctx = canvas.getContext('2d')
     const W = canvas.width = canvas.offsetWidth
     const H = canvas.height = canvas.offsetHeight
-    const project = (lon, lat) => [(lon + 180) / 360 * W, (90 - lat) / 180 * H]
+    // Letterbox to a true 2:1 equirectangular ratio (360deg/180deg) instead
+    // of stretching lon/lat independently across whatever the panel's raw
+    // aspect ratio happens to be — see SupplyMap.jsx's mapDims for the same
+    // fix and why (a non-2:1 canvas visibly distorts every continent).
+    const containerAspect = W / H
+    const naturalAspect = 2
+    const { mapW, mapH, offsetX, offsetY } = containerAspect > naturalAspect
+      ? { mapW: H * naturalAspect, mapH: H, offsetX: (W - H * naturalAspect) / 2, offsetY: 0 }
+      : { mapW: W, mapH: W / naturalAspect, offsetX: 0, offsetY: (H - W / naturalAspect) / 2 }
+    const project = (lon, lat) => [offsetX + (lon + 180) / 360 * mapW, offsetY + (90 - lat) / 180 * mapH]
 
     // Region average performance from ETFs
     const byRegion = {}

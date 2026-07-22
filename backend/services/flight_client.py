@@ -27,26 +27,62 @@ import aiohttp
 
 PRIMARY_URL  = "https://api.adsb.lol/v2/point"
 FALLBACK_URL = "https://api.airplanes.live/v2/point"
-RADIUS_NM = 250  # max radius per point query on both APIs
+RADIUS_NM = 250  # hard max per point query on both APIs — a larger value doesn't
+                 # get you more coverage, it just hangs: verified directly,
+                 # radius=250 returns in ~7s, radius=100000 didn't return in 120s.
 
-# High-traffic hub points spread across major air-traffic corridors, so the
-# 250nm-radius circles cover a broad, globally-representative sample instead
-# of just one region.
+# High-traffic hub points spread across major air-traffic corridors. 10 points
+# at 250nm radius only covers well under 1% of Earth's surface, which is why
+# the feed looked sparse even when it was working — widened to ~30 points
+# across every populated continent for meaningfully denser real coverage.
+# Fetched in parallel (see _run_poll), so more points costs latency, not a
+# slower refresh cycle.
 HUB_POINTS = [
-    (40.7, -74.0),    # New York / US Northeast corridor
-    (34.0, -118.2),   # Los Angeles / US West Coast
-    (41.9, -87.6),    # Chicago / US Midwest hub
-    (51.5, -0.1),     # London / Western Europe
-    (50.0, 8.6),      # Frankfurt / Central Europe
-    (25.3, 55.3),     # Dubai / Middle East hub
-    (1.35, 103.8),    # Singapore / SE Asia
-    (35.7, 139.7),    # Tokyo / NE Asia
-    (22.3, 114.2),    # Hong Kong / South China
-    (-33.9, 151.2),   # Sydney / Oceania
+    # North America
+    (40.7, -74.0),    # New York
+    (34.0, -118.2),   # Los Angeles
+    (41.9, -87.6),    # Chicago
+    (25.8, -80.2),    # Miami
+    (32.9, -97.0),    # Dallas-Fort Worth
+    (47.6, -122.3),   # Seattle
+    (43.7, -79.4),    # Toronto
+    (19.4, -99.1),    # Mexico City
+    # South America
+    (-23.6, -46.6),   # São Paulo
+    (-34.6, -58.4),   # Buenos Aires
+    (4.7, -74.1),     # Bogotá
+    # Europe
+    (51.5, -0.1),     # London
+    (50.0, 8.6),      # Frankfurt
+    (48.9, 2.4),      # Paris
+    (40.4, -3.7),     # Madrid
+    (41.9, 12.5),     # Rome
+    (52.2, 21.0),     # Warsaw
+    (55.8, 37.6),     # Moscow
+    # Middle East
+    (25.3, 55.3),     # Dubai
+    (25.3, 51.5),     # Doha
+    (41.0, 29.0),     # Istanbul
+    # Africa
+    (-26.1, 28.0),    # Johannesburg
+    (30.1, 31.4),     # Cairo
+    (6.6, 3.3),       # Lagos
+    (-1.3, 36.8),     # Nairobi
+    # Asia
+    (1.35, 103.8),    # Singapore
+    (35.7, 139.7),    # Tokyo
+    (22.3, 114.2),    # Hong Kong
+    (31.2, 121.5),    # Shanghai
+    (19.1, 72.9),     # Mumbai
+    (28.6, 77.2),     # Delhi
+    (13.7, 100.5),    # Bangkok
+    (37.6, 127.0),    # Seoul
+    # Oceania
+    (-33.9, 151.2),   # Sydney
+    (-36.8, 174.8),   # Auckland
 ]
 
-POLL_INTERVAL_SEC = 20      # full-cycle refresh cadence
-INTER_POINT_DELAY_SEC = 1   # light stagger; neither API enforces a hard per-IP limit like OpenSky did
+POLL_INTERVAL_SEC = 20      # full-cycle refresh cadence (measured from cycle start)
 
 # In-memory store: {hex: {icao24, callsign, lat, lon, altitude, velocity, heading, origin_country, on_ground, ts}}
 _flights: dict[str, dict] = {}
@@ -106,21 +142,40 @@ def _prune(max_age_sec: float = 300):
         _flights.pop(k, None)
 
 
+MAX_CONCURRENT_REQUESTS = 4  # firing all ~30 points at once trips adsb.lol's
+                             # concurrency limit (verified: got 429s back
+                             # instantly on several points under full parallelism)
+
+
+async def _fetch_point_limited(session, base_url, lat, lon, sem):
+    async with sem:
+        return await _fetch_point(session, base_url, lat, lon)
+
+
 async def _run_poll():
-    """Background task: cycle through hub points, refreshing the store."""
+    """Background task: fetch hub points (bounded concurrency) each cycle, refreshing the store."""
     global _last_fetch_ts, _available, _unavailable_reason, _using_fallback
 
     async with aiohttp.ClientSession() as session:
         while True:
+            cycle_start = time.time()
             base_url = FALLBACK_URL if _using_fallback else PRIMARY_URL
-            any_ok = False
 
-            for lat, lon in HUB_POINTS:
-                aircraft = await _fetch_point(session, base_url, lat, lon)
+            # Bounded concurrency, not full parallelism: sequential fetching
+            # (the original version) made each real-world request (~7s
+            # observed) add up across 30 points into minutes per cycle, but
+            # firing all 30 at once trips adsb.lol's per-IP concurrency
+            # limit (429s). A small semaphore gets most of the speed
+            # without the rate-limit hit.
+            sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+            results = await asyncio.gather(
+                *[_fetch_point_limited(session, base_url, lat, lon, sem) for lat, lon in HUB_POINTS]
+            )
+            any_ok = False
+            for aircraft in results:
                 if aircraft is not None:
                     any_ok = True
                     _ingest(aircraft)
-                await asyncio.sleep(INTER_POINT_DELAY_SEC)
 
             if any_ok:
                 _available = True
@@ -136,8 +191,8 @@ async def _run_poll():
                 logger.warning("[Flight] full poll cycle failed on both providers")
 
             _prune()
-            remaining = POLL_INTERVAL_SEC - INTER_POINT_DELAY_SEC * len(HUB_POINTS)
-            await asyncio.sleep(max(1, remaining))
+            elapsed = time.time() - cycle_start
+            await asyncio.sleep(max(1, POLL_INTERVAL_SEC - elapsed))
 
 
 def start_poller():
@@ -149,8 +204,15 @@ def start_poller():
     asyncio.ensure_future(_run_poll())
 
 
-def get_flights(limit: int = 500) -> dict:
-    """Current flight snapshot for the map."""
+def get_flights(limit: int = 3000) -> dict:
+    """
+    Current flight snapshot for the map. Default limit raised from 500 to
+    3000 (30 hub points now regularly track 2000+ concurrent aircraft) —
+    500 wasn't a deliberate cap, and since _flights is a plain insertion-
+    ordered dict, truncating at a low limit meant only whichever hub was
+    fetched/ingested first ever made it onscreen, making global coverage
+    look far sparser than what's actually tracked.
+    """
     _prune()
     flights = [v for v in _flights.values() if v.get("lat") is not None][:limit]
 
