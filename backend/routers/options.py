@@ -131,6 +131,17 @@ async def get_options_chain_full(
     atm_strike = None
     if rows and spot:
         atm_strike = min((r["strike"] for r in rows), key=lambda k: abs(k - spot))
+    elif rows:
+        # Stock-snapshot entitlement/outage fallback: a call delta of ~0.5
+        # (equivalently a put delta of ~-0.5) marks the at-the-money strike
+        # regardless of whether we know the literal spot price, since delta
+        # is derived from the options snapshot we already have in hand.
+        by_delta = [
+            (r["strike"], r["call"]["delta"]) for r in rows
+            if r.get("call") and r["call"].get("delta") is not None
+        ]
+        if by_delta:
+            atm_strike = min(by_delta, key=lambda t: abs(t[1] - 0.5))[0]
 
     total_rows = len(rows)
     if window and atm_strike is not None:
