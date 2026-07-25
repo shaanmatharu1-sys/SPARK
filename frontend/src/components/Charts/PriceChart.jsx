@@ -1,17 +1,25 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { createChart, ColorType, CandlestickSeries, HistogramSeries, LineSeries, TickMarkType } from 'lightweight-charts'
+import { createChartEngine } from '../../lib/canvasChart'
 import { useBars } from '../../hooks/useMarketData'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { sma, ema, rsi, macd, bollingerBands } from '../../lib/indicators'
 import { useDrawingTools } from './ChartDrawingLayer'
 
 const TIMESPANS = [
+  { label: '1m',  multiplier: 1,  timespan: 'minute', limit: 390 },
+  { label: '5m',  multiplier: 5,  timespan: 'minute', limit: 390 },
+  { label: '30m', multiplier: 30, timespan: 'minute', limit: 390 },
   { label: '1D',  multiplier: 1,  timespan: 'minute', limit: 390 },
   { label: '1W',  multiplier: 5,  timespan: 'minute', limit: 390 },
   { label: '1M',  multiplier: 1,  timespan: 'day',    limit: 30 },
   { label: '3M',  multiplier: 1,  timespan: 'day',    limit: 65 },
+  { label: 'YTD', multiplier: 1,  timespan: 'day',    limit: 366, getFromDate: () => `${new Date().getFullYear()}-01-01` },
   { label: '1Y',  multiplier: 1,  timespan: 'week',   limit: 52 },
+  // "All Time" depth depends on the live Polygon plan's historical entitlement —
+  // this asks for as far back as the API will give us, not a guaranteed range.
+  { label: 'All', multiplier: 1,  timespan: 'month',  limit: 1000, getFromDate: () => '1990-01-01' },
 ]
+const DEFAULT_TIMESPAN = TIMESPANS.find(t => t.label === '1D')
 
 const INDICATORS = [
   { key: 'sma',    label: 'SMA 20' },
@@ -21,44 +29,36 @@ const INDICATORS = [
   { key: 'macd',   label: 'MACD' },
 ]
 
+const CHART_TYPES = [
+  { key: 'candle', label: 'Candles' },
+  { key: 'bar',    label: 'Bars' },
+  { key: 'line',   label: 'Line' },
+]
+
+// Canvas can't read CSS custom properties, so these mirror the theme tokens
+// noted alongside each one (matches the convention already used across this
+// codebase's other canvas components — SupplyMap, Network, etc).
+const COLORS = {
+  grid:             '#1A3354', // var(--border)
+  border:           '#1A3354', // var(--border)
+  text:             '#E8EAED', // var(--text-primary)
+  dimText:          '#5E789A', // var(--text-dim)
+  up:               '#3FB68B', // var(--green)
+  down:             '#E0556B', // var(--red)
+  volUp:            '#3FB68B4D', // var(--green) ~30% alpha
+  volDown:          '#E0556B4D', // var(--red) ~30% alpha
+  line:             '#6BA3D4', // var(--steel-bright)
+  crosshair:        '#6BA3D480', // var(--steel-bright) ~50% alpha
+  crosshairLabelBg: '#16314F', // var(--bg-raised)
+}
+
 function zip(times, values) {
   const out = []
   for (let i = 0; i < times.length; i++) {
     if (values[i] === undefined || isNaN(values[i])) continue
-    out.push({ time: times[i], value: values[i] })
+    out.push({ t: times[i], v: values[i] })
   }
   return out
-}
-
-// lightweight-charts renders time-axis labels and the crosshair tooltip using
-// UTC getters internally (a documented quirk of the library), even though the
-// bar timestamps it's fed are correct UTC epoch seconds — so without these
-// overrides every label sits 4-5 hours off from the viewer's actual local
-// clock (visible as e.g. a chart reading "23:41" while the header clock reads
-// "00:30"). toLocaleString/toLocaleTimeString/toLocaleDateString use the
-// browser's local timezone by default when no `timeZone` option is passed,
-// which is what we want here.
-function localTickMark(time, tickMarkType) {
-  const d = new Date(time * 1000)
-  switch (tickMarkType) {
-    case TickMarkType.Year:
-      return d.toLocaleDateString(undefined, { year: 'numeric' })
-    case TickMarkType.Month:
-      return d.toLocaleDateString(undefined, { month: 'short' })
-    case TickMarkType.DayOfMonth:
-      return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-    case TickMarkType.TimeWithSeconds:
-      return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })
-    default:
-      return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  }
-}
-
-function localTimeFormatter(time) {
-  const d = new Date(time * 1000)
-  return d.toLocaleString(undefined, {
-    month: 'short', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit',
-  })
 }
 
 function pctChange(closes) {
@@ -67,263 +67,127 @@ function pctChange(closes) {
   return closes.map(c => (c == null ? NaN : (c / base - 1) * 100))
 }
 
-export default function PriceChart({ symbol = 'SPY' }) {
+export default function PriceChart({ symbol = 'SPY', initialTimeframe }) {
   const containerRef = useRef(null)
-  const chartRef     = useRef(null)
-  const candleRef    = useRef(null)
-  const volumeRef    = useRef(null)
-  const lastBarTime  = useRef(null)
-  const closesRef    = useRef([])   // full closes for the currently loaded bars
-  const timesRef     = useRef([])   // matching time (seconds) for each close
-  const indicatorSeriesRef = useRef({}) // { sma, ema, bbUpper, bbLower, rsi, macdLine, macdSignal, macdHist }
-  const compareSeriesRef   = useRef(null)
+  const canvasElRef   = useRef(null)
+  const engineRef     = useRef(null)
+  const lastBarTime   = useRef(null)
+  const closesRef     = useRef([])
+  const timesRef      = useRef([])
 
-  const [ts, setTs] = useState(TIMESPANS[0])
-  const { data: bars, loading } = useBars(symbol, ts.multiplier, ts.timespan, ts.limit)
+  const [ts, setTs] = useState(() => TIMESPANS.find(t => t.label === initialTimeframe) || DEFAULT_TIMESPAN)
+  const [mode, setMode] = useState('candle')
+  const [showVolume, setShowVolume] = useState(true)
+
+  const fromDate = ts.getFromDate ? ts.getFromDate() : null
+  const { data: bars, loading } = useBars(symbol, ts.multiplier, ts.timespan, ts.limit, fromDate)
 
   const [activeIndicators, setActiveIndicators] = useState({})
   const toggleIndicator = (key) => setActiveIndicators(a => ({ ...a, [key]: !a[key] }))
 
   const [compareInput, setCompareInput] = useState('')
   const [compareSymbol, setCompareSymbol] = useState(null)
-  const { data: compareBars } = useBars(compareSymbol, ts.multiplier, ts.timespan, ts.limit)
+  const { data: compareBars } = useBars(compareSymbol, ts.multiplier, ts.timespan, ts.limit, fromDate)
 
   const { canvasRef: drawCanvasRef, activeTool, selectTool, drawings, clearDrawings, onCanvasClick } =
-    useDrawingTools(chartRef, candleRef, containerRef, symbol)
+    useDrawingTools(engineRef, engineRef, containerRef, symbol)
 
   // Live tick updates only make sense for the 1-minute intraday view — the websocket's
-  // "AM" events are always 1-minute bars, so applying them to a 5m/day/week series
+  // "AM" events are always 1-minute bars, so applying them to a 5m/30m/day/week series
   // would draw a spurious extra candle instead of updating the right bucket.
   const isIntraday = ts.timespan === 'minute' && ts.multiplier === 1
 
-  // Rebuild every indicator series (overlays + sub-panes) from the closes/times
-  // currently in closesRef/timesRef. Called on bulk data load and whenever the
-  // active-indicator toggles change; cheap enough to just redo from scratch.
+  // Rebuild every indicator overlay/sub-pane from the closes/times currently
+  // in closesRef/timesRef. Called on bulk data load and whenever the active-
+  // indicator toggles (or a live tick) change; cheap enough to just redo.
   const rebuildIndicators = useCallback(() => {
-    const chart = chartRef.current
-    if (!chart) return
-    const closes = closesRef.current
-    const times  = timesRef.current
-    if (!closes.length) return
+    const engine = engineRef.current
+    const closes = closesRef.current, times = timesRef.current
+    if (!engine || !closes.length) return
 
-    for (const s of Object.values(indicatorSeriesRef.current)) {
-      if (s) { try { chart.removeSeries(s) } catch { /* already gone */ } }
-    }
-    indicatorSeriesRef.current = {}
-    while (chart.panes().length > 1) chart.removePane(chart.panes().length - 1)
-
-    if (activeIndicators.sma) {
-      const s = chart.addSeries(LineSeries, {
-        color: '#6BA3D4', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, // var(--steel-bright)
-      })
-      s.setData(zip(times, sma(closes, 20)))
-      indicatorSeriesRef.current.sma = s
-    }
-    if (activeIndicators.ema) {
-      const s = chart.addSeries(LineSeries, {
-        color: '#E0C168', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, // var(--gold-bright)
-      })
-      s.setData(zip(times, ema(closes, 20)))
-      indicatorSeriesRef.current.ema = s
-    }
+    const overlays = []
+    if (activeIndicators.sma) overlays.push({ color: '#6BA3D4', points: zip(times, sma(closes, 20)) }) // var(--steel-bright)
+    if (activeIndicators.ema) overlays.push({ color: '#E0C168', points: zip(times, ema(closes, 20)) }) // var(--gold-bright)
     if (activeIndicators.bbands) {
       const bb = bollingerBands(closes, 20, 2)
-      const upper = chart.addSeries(LineSeries, {
-        color: '#9B8Bd4', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, // var(--purple)
-      })
-      upper.setData(zip(times, bb.upper))
-      const lower = chart.addSeries(LineSeries, {
-        color: '#9B8Bd4', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, // var(--purple)
-      })
-      lower.setData(zip(times, bb.lower))
-      indicatorSeriesRef.current.bbUpper = upper
-      indicatorSeriesRef.current.bbLower = lower
+      overlays.push({ color: '#9B8Bd4', points: zip(times, bb.upper) }) // var(--purple)
+      overlays.push({ color: '#9B8Bd4', points: zip(times, bb.lower) }) // var(--purple)
     }
+    engine.setOverlays(overlays)
+
+    const subPanes = []
     if (activeIndicators.rsi) {
-      const pane = chart.addPane()
-      pane.setStretchFactor(0.3)
-      const s = pane.addSeries(LineSeries, { color: '#E0C168', lineWidth: 1 }) // var(--gold-bright)
-      s.setData(zip(times, rsi(closes, 14)))
-      indicatorSeriesRef.current.rsi = s
+      subPanes.push({
+        label: 'RSI 14',
+        series: [{ type: 'line', color: '#E0C168', points: zip(times, rsi(closes, 14)) }], // var(--gold-bright)
+      })
     }
     if (activeIndicators.macd) {
-      const pane = chart.addPane()
-      pane.setStretchFactor(0.3)
       const m = macd(closes, 12, 26, 9)
-      const hist = pane.addSeries(HistogramSeries, { priceFormat: { type: 'volume' } })
-      hist.setData(zip(times, m.histogram).map(p => ({
-        ...p, color: p.value >= 0 ? '#3FB68B60' : '#E0556B60', // var(--green)/var(--red) at ~38% alpha
-      })))
-      const line = pane.addSeries(LineSeries, { color: '#6BA3D4', lineWidth: 1 }) // var(--steel-bright)
-      line.setData(zip(times, m.macd))
-      const signal = pane.addSeries(LineSeries, { color: '#C9A84C', lineWidth: 1 }) // var(--gold)
-      signal.setData(zip(times, m.signal))
-      indicatorSeriesRef.current.macdHist = hist
-      indicatorSeriesRef.current.macdLine = line
-      indicatorSeriesRef.current.macdSignal = signal
+      subPanes.push({
+        label: 'MACD',
+        series: [
+          { type: 'histogram', points: zip(times, m.histogram), upColor: '#3FB68B99', downColor: '#E0556B99' }, // var(--green)/var(--red) ~60% alpha
+          { type: 'line', color: '#6BA3D4', points: zip(times, m.macd) },   // var(--steel-bright)
+          { type: 'line', color: '#C9A84C', points: zip(times, m.signal) }, // var(--gold)
+        ],
+      })
     }
+    engine.setSubPanes(subPanes)
   }, [activeIndicators])
 
   const onTick = useCallback((msg) => {
     if (msg.type !== 'bar' || msg.symbol !== symbol) return
-    if (!candleRef.current || !volumeRef.current) return
+    const engine = engineRef.current
+    if (!engine) return
     const time = Math.floor(msg.ts / 1000)
     if (lastBarTime.current != null && time < lastBarTime.current) return
     lastBarTime.current = time
-    candleRef.current.update({
-      time, open: msg.open, high: msg.high, low: msg.low, close: msg.close,
-    })
-    volumeRef.current.update({
-      time, value: msg.volume,
-      // mirrors var(--green)/var(--red) at ~19% alpha — lightweight-charts can't read CSS vars
-      color: msg.close >= msg.open ? '#3FB68B30' : '#E0556B30',
-    })
+    engine.updateLastBar({ t: time, o: msg.open, h: msg.high, l: msg.low, c: msg.close, v: msg.volume })
 
-    // Keep the local closes/times mirror in sync, then recompute just the
-    // trailing indicator value(s) instead of a full network round-trip.
     const closes = closesRef.current, times = timesRef.current
-    if (times.length && times[times.length - 1] === time) {
-      closes[closes.length - 1] = msg.close
-    } else {
-      closes.push(msg.close); times.push(time)
-    }
-    const ind = indicatorSeriesRef.current
-    if (ind.sma)  ind.sma.update({ time, value: sma(closes, 20).at(-1) })
-    if (ind.ema)  ind.ema.update({ time, value: ema(closes, 20).at(-1) })
-    if (ind.bbUpper) {
-      const bb = bollingerBands(closes, 20, 2)
-      ind.bbUpper.update({ time, value: bb.upper.at(-1) })
-      ind.bbLower.update({ time, value: bb.lower.at(-1) })
-    }
-    if (ind.rsi) ind.rsi.update({ time, value: rsi(closes, 14).at(-1) })
-    if (ind.macdLine) {
-      const m = macd(closes, 12, 26, 9)
-      const h = m.histogram.at(-1)
-      ind.macdLine.update({ time, value: m.macd.at(-1) })
-      ind.macdSignal.update({ time, value: m.signal.at(-1) })
-      ind.macdHist.update({ time, value: h, color: h >= 0 ? '#3FB68B60' : '#E0556B60' })
-    }
-  }, [symbol])
+    if (times.length && times[times.length - 1] === time) closes[closes.length - 1] = msg.close
+    else { closes.push(msg.close); times.push(time) }
+    rebuildIndicators()
+  }, [symbol, rebuildIndicators])
 
   useWebSocket(isIntraday ? `/quotes/ws?symbols=${symbol}` : null, onTick, isIntraday)
 
-  // Init chart
+  // Init the chart engine once per mount.
   useEffect(() => {
-    if (!containerRef.current) return
-    // lightweight-charts draws to its own internal canvas and can't read CSS custom
-    // properties, so these hex values are hardcoded to mirror the theme tokens noted
-    // alongside each one (var(--bg-panel), var(--text-dim), var(--border), etc).
-    const chart = createChart(containerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: '#0F2138' }, // var(--bg-panel)
-        textColor:  '#5E789A', // var(--text-dim)
-      },
-      grid: {
-        vertLines:  { color: '#1A3354' }, // var(--border)
-        horzLines:  { color: '#1A3354' }, // var(--border)
-      },
-      crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: '#244873' }, // var(--border-bright)
-      leftPriceScale: { visible: false, borderColor: '#244873' }, // used only when compare mode is active
-      localization: { timeFormatter: localTimeFormatter },
-      timeScale: {
-        borderColor:      '#244873', // var(--border-bright)
-        timeVisible:      true,
-        secondsVisible:   false,
-        tickMarkFormatter: localTickMark,
-      },
-      width:  containerRef.current.clientWidth,
-      height: containerRef.current.clientHeight,
-    })
-
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor:          '#3FB68B', // var(--green)
-      downColor:        '#E0556B', // var(--red)
-      borderUpColor:    '#3FB68B', // var(--green)
-      borderDownColor:  '#E0556B', // var(--red)
-      wickUpColor:      '#3FB68B', // var(--green)
-      wickDownColor:    '#E0556B', // var(--red)
-    })
-
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      color:     '#6BA3D4', // var(--steel-bright)
-      priceFormat: { type: 'volume' },
-      priceScaleId: 'volume',
-      scaleMargins: { top: 0.8, bottom: 0 },
-    })
-
-    chartRef.current   = chart
-    candleRef.current  = candleSeries
-    volumeRef.current  = volumeSeries
-
-    // Resize observer
-    const ro = new ResizeObserver(() => {
-      if (containerRef.current) {
-        chart.applyOptions({
-          width:  containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
-        })
-      }
-    })
+    if (!canvasElRef.current || !containerRef.current) return
+    const engine = createChartEngine(canvasElRef.current, COLORS)
+    engineRef.current = engine
+    const ro = new ResizeObserver(() => engine.resize())
     ro.observe(containerRef.current)
-
-    return () => {
-      ro.disconnect()
-      chart.remove()
-    }
+    return () => { ro.disconnect(); engine.destroy() }
   }, [])
 
-  // Update data
-  useEffect(() => {
-    if (!bars || !candleRef.current) return
-    const candles = bars.map(b => ({
-      time:  b.t / 1000,
-      open:  b.o,
-      high:  b.h,
-      low:   b.l,
-      close: b.c,
-    }))
-    const volumes = bars.map(b => ({
-      time:  b.t / 1000,
-      value: b.v,
-      // mirrors var(--green)/var(--red) at ~19% alpha — lightweight-charts can't read CSS vars
-      color: b.c >= b.o ? '#3FB68B30' : '#E0556B30',
-    }))
-    candleRef.current.setData(candles)
-    volumeRef.current.setData(volumes)
-    chartRef.current?.timeScale().fitContent()
-    lastBarTime.current = candles.length ? candles[candles.length - 1].time : null
+  useEffect(() => { engineRef.current?.setMode(mode) }, [mode])
+  useEffect(() => { engineRef.current?.setShowVolume(showVolume) }, [showVolume])
 
-    closesRef.current = candles.map(c => c.close)
-    timesRef.current  = candles.map(c => c.time)
+  // Load bulk bar data into the engine.
+  useEffect(() => {
+    if (!bars || !engineRef.current) return
+    const engineBars = bars.map(b => ({ t: b.t / 1000, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v }))
+    engineRef.current.setData(engineBars)
+    lastBarTime.current = engineBars.length ? engineBars[engineBars.length - 1].t : null
+    closesRef.current = engineBars.map(b => b.c)
+    timesRef.current  = engineBars.map(b => b.t)
     rebuildIndicators()
   }, [bars])
 
-  // Rebuild indicators when the toggle set changes (bars themselves unchanged)
   useEffect(() => { rebuildIndicators() }, [activeIndicators])
 
-  // Compare/overlay: normalized (% change from first bar in range) line on a
-  // left price scale, so it doesn't distort the primary candlestick axis.
+  // Compare/overlay: normalized (% change from first bar in range), drawn with
+  // its own independently-scaled range so it doesn't distort the price axis.
   useEffect(() => {
-    const chart = chartRef.current
-    if (!chart) return
-    if (compareSeriesRef.current) {
-      try { chart.removeSeries(compareSeriesRef.current) } catch { /* already gone */ }
-      compareSeriesRef.current = null
-    }
-    if (!compareSymbol || !compareBars?.length) {
-      chart.applyOptions({ leftPriceScale: { visible: false } })
-      return
-    }
-    chart.applyOptions({ leftPriceScale: { visible: true, borderColor: '#244873' } })
+    const engine = engineRef.current
+    if (!engine) return
+    if (!compareSymbol || !compareBars?.length) { engine.setCompareSeries(null); return }
     const closes = compareBars.map(b => b.c)
     const times  = compareBars.map(b => b.t / 1000)
-    const s = chart.addSeries(LineSeries, {
-      color: '#5BB8C4', lineWidth: 2, priceScaleId: 'left', // var(--cyan)
-      priceLineVisible: false,
-    })
-    s.setData(zip(times, pctChange(closes)))
-    compareSeriesRef.current = s
+    engine.setCompareSeries({ color: '#5BB8C4', points: zip(times, pctChange(closes)) }) // var(--cyan)
   }, [compareSymbol, compareBars])
 
   return (
@@ -331,6 +195,19 @@ export default function PriceChart({ symbol = 'SPY' }) {
       <div className="panel-header" style={{ flexWrap: 'wrap', gap: 6 }}>
         <span className="title">{symbol} — Chart</span>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+          {CHART_TYPES.map(c => (
+            <button key={c.key} className={`btn ${mode === c.key ? 'active' : ''}`}
+              style={{ fontSize: 9, padding: '2px 7px' }}
+              onClick={() => setMode(c.key)}>
+              {c.label}
+            </button>
+          ))}
+          <button className={`btn ${showVolume ? 'active' : ''}`}
+            style={{ fontSize: 9, padding: '2px 7px' }}
+            onClick={() => setShowVolume(v => !v)}>
+            Vol
+          </button>
+
           {INDICATORS.map(i => (
             <button
               key={i.key}
@@ -373,7 +250,7 @@ export default function PriceChart({ symbol = 'SPY' }) {
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 4, marginLeft: 6 }}>
+          <div style={{ display: 'flex', gap: 4, marginLeft: 6, flexWrap: 'wrap' }}>
             {TIMESPANS.map(t => (
               <button
                 key={t.label}
@@ -400,13 +277,14 @@ export default function PriceChart({ symbol = 'SPY' }) {
         style={{ flex: 1, position: 'relative' }}
       >
         <canvas
+          ref={canvasElRef}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+        />
+        <canvas
           ref={drawCanvasRef}
           onClick={onCanvasClick}
           style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 5,
-            // lightweight-charts appends its own canvases to this container in a
-            // later effect, so without an explicit z-index they paint on top of
-            // (and eat clicks meant for) this drawing overlay.
             pointerEvents: activeTool ? 'auto' : 'none',
             cursor: activeTool ? 'crosshair' : 'default',
           }}
@@ -415,7 +293,7 @@ export default function PriceChart({ symbol = 'SPY' }) {
           <div style={{
             position: 'absolute', inset: 0, display: 'flex',
             alignItems: 'center', justifyContent: 'center',
-            color: 'var(--text-dim)', fontSize: 11,
+            color: 'var(--text-dim)', fontSize: 11, pointerEvents: 'none',
           }}>
             Loading...
           </div>

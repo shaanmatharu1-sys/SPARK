@@ -14,9 +14,13 @@ function saveDrawings(symbol, drawings) {
 /**
  * Drawing-tools state + canvas renderer, shared between the toolbar (in the
  * panel header) and the overlay canvas (on top of the chart). Uses the
- * chart's own coordinate-conversion methods (time<->x, price<->y) rather
- * than hand-rolled projection math, but otherwise mirrors the click-to-place
- * / redraw-on-pan-zoom pattern already proven in SupplyMap.jsx's canvas.
+ * chart engine's own coordinate-conversion methods (time<->x, price<->y)
+ * rather than hand-rolled projection math, but otherwise mirrors the
+ * click-to-place / redraw-on-pan-zoom pattern already proven in
+ * SupplyMap.jsx's canvas. chartRef and seriesRef are both the same
+ * canvasChart engine instance — kept as two params to match the shape this
+ * hook already had, since the engine combines what used to be two separate
+ * lightweight-charts objects (chart + series) into one.
  */
 export function useDrawingTools(chartRef, seriesRef, containerRef, symbol) {
   const canvasRef = useRef(null)
@@ -37,8 +41,8 @@ export function useDrawingTools(chartRef, seriesRef, containerRef, symbol) {
     ctx.clearRect(0, 0, W, H)
 
     const toXY = (time, price) => {
-      const x = chart.timeScale().timeToCoordinate(time)
-      const y = series.priceToCoordinate(price)
+      const x = chart.timeToX(time)
+      const y = series.priceToY(price)
       return (x == null || y == null) ? null : { x, y }
     }
 
@@ -66,7 +70,7 @@ export function useDrawingTools(chartRef, seriesRef, containerRef, symbol) {
         const xLo = Math.min(p1.x, p2.x), xHi = Math.max(p1.x, p2.x)
         for (const level of FIB_LEVELS) {
           const price = d.p1 + level * (d.p2 - d.p1)
-          const y = series.priceToCoordinate(price)
+          const y = series.priceToY(price)
           if (y == null) continue
           ctx.strokeStyle = 'rgba(155,139,212,0.6)' // var(--purple)
           ctx.lineWidth = 1
@@ -90,11 +94,11 @@ export function useDrawingTools(chartRef, seriesRef, containerRef, symbol) {
     redraw()
     const chart = chartRef.current
     if (!chart) return
-    chart.timeScale().subscribeVisibleLogicalRangeChange(redraw)
+    chart.subscribeRedraw(redraw)
     const ro = new ResizeObserver(redraw)
     if (containerRef.current) ro.observe(containerRef.current)
     return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(redraw)
+      chart.unsubscribeRedraw(redraw)
       ro.disconnect()
     }
   }, [redraw, chartRef, containerRef])
@@ -105,8 +109,8 @@ export function useDrawingTools(chartRef, seriesRef, containerRef, symbol) {
     if (!chart || !series) return
     const rect = canvasRef.current.getBoundingClientRect()
     const x = ev.clientX - rect.left, y = ev.clientY - rect.top
-    const time = chart.timeScale().coordinateToTime(x)
-    const price = series.coordinateToPrice(y)
+    const time = chart.xToTime(x)
+    const price = series.yToPrice(y)
     if (time == null || price == null) return
 
     if (activeTool === 'ray') {

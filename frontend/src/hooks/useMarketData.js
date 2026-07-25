@@ -46,10 +46,13 @@ export function useTickerDetails(symbol) {
   return useFetch(symbol ? `/quotes/${symbol}/details` : null, null)
 }
 
-export function useBars(symbol, multiplier = 1, timespan = 'minute', limit = 390) {
+export function useBars(symbol, multiplier = 1, timespan = 'minute', limit = 390, fromDate = null) {
   // 30s poll as a baseline so the chart doesn't go stale between symbol/timeframe
   // changes; PriceChart additionally layers live websocket ticks on top for 1D view.
-  return useFetch(`/quotes/${symbol}/bars?multiplier=${multiplier}&timespan=${timespan}&limit=${limit}`, 30_000)
+  // fromDate overrides the backend's default lookback window — needed for YTD/All-Time
+  // ranges, where the auto-computed lookback wouldn't reach far enough back.
+  const fromQs = fromDate ? `&from_date=${fromDate}` : ''
+  return useFetch(`/quotes/${symbol}/bars?multiplier=${multiplier}&timespan=${timespan}&limit=${limit}${fromQs}`, 30_000)
 }
 
 export function useMacroDashboard() {

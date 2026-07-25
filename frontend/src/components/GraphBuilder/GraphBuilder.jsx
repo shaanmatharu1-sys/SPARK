@@ -7,15 +7,23 @@ import Explain from '../common/Explain'
 // was the "graphs don't show quick aggs" gap: the backend already supported
 // arbitrary timespans (fetch_agg_bars takes one), the frontend just never
 // exposed anything but 'day'.
+// Days-since-Jan-1 is computed once at module load (page-load time) rather
+// than re-derived per render — fine for a formula plotter that isn't as
+// precision-critical as the main price chart's own YTD button.
+const daysSinceJan1 = Math.ceil((Date.now() - new Date(new Date().getFullYear(), 0, 1).getTime()) / 86400000)
+
 const RANGE_OPTIONS = [
-  { label: '1D', days: 1,    timespan: 'minute' },
-  { label: '5D', days: 5,    timespan: 'minute' },
-  { label: '1M', days: 30,   timespan: 'hour' },
-  { label: '3M', days: 90,   timespan: 'day' },
-  { label: '6M', days: 180,  timespan: 'day' },
-  { label: '1Y', days: 365,  timespan: 'day' },
-  { label: '2Y', days: 730,  timespan: 'day' },
-  { label: '5Y', days: 1825, timespan: 'day' },
+  { label: '1D',  days: 1,     timespan: 'minute' },
+  { label: '5D',  days: 5,     timespan: 'minute' },
+  { label: '1M',  days: 30,    timespan: 'hour' },
+  { label: '3M',  days: 90,    timespan: 'day' },
+  { label: '6M',  days: 180,   timespan: 'day' },
+  { label: 'YTD', days: daysSinceJan1, timespan: 'day' },
+  { label: '1Y',  days: 365,   timespan: 'day' },
+  { label: '2Y',  days: 730,   timespan: 'day' },
+  { label: '5Y',  days: 1825,  timespan: 'day' },
+  // Monthly bars keep this well under the backend's 5000-bar cap even across decades.
+  { label: 'All', days: 10950, timespan: 'month' },
 ]
 
 const SAVE_KEY = 'terminal_saved_graphs'
@@ -39,7 +47,7 @@ function fmtDate(ts, timespan) {
 export default function GraphBuilder() {
   const { data: meta } = useGraphFunctions()
   const [expr, setExpr] = useState('SMA(AAPL,20) - SMA(AAPL,50)')
-  const [range, setRange] = useState(RANGE_OPTIONS[5]) // 1Y
+  const [range, setRange] = useState(() => RANGE_OPTIONS.find(o => o.label === '1Y'))
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(loadSaved)

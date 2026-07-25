@@ -2,7 +2,7 @@
 // custom properties index.css already defines, so every component that
 // already reads var(--xxx) picks up a theme swap with zero component changes.
 //
-// Known limitation: canvas-drawn colors (lightweight-charts config in
+// Known limitation: canvas-drawn colors (canvasChart.js's engine config in
 // PriceChart.jsx, Network/SupplyMap canvas fills) are hardcoded hex values
 // that mirror these vars by convention — they pick up a new theme on next
 // remount/symbol change, not live. Fixing that fully would mean re-deriving

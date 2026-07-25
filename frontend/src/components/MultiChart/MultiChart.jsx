@@ -95,7 +95,7 @@ export default function MultiChart() {
                   width={100}
                 />
               </div>
-              <PriceChart symbol={cell.symbol} />
+              <PriceChart symbol={cell.symbol} initialTimeframe={cell.timeframe} />
             </div>
           ))}
         </div>
