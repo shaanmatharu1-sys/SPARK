@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { createChart, ColorType, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts'
+import { createChart, ColorType, CandlestickSeries, HistogramSeries, LineSeries, TickMarkType } from 'lightweight-charts'
 import { useBars } from '../../hooks/useMarketData'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { sma, ema, rsi, macd, bollingerBands } from '../../lib/indicators'
@@ -28,6 +28,37 @@ function zip(times, values) {
     out.push({ time: times[i], value: values[i] })
   }
   return out
+}
+
+// lightweight-charts renders time-axis labels and the crosshair tooltip using
+// UTC getters internally (a documented quirk of the library), even though the
+// bar timestamps it's fed are correct UTC epoch seconds — so without these
+// overrides every label sits 4-5 hours off from the viewer's actual local
+// clock (visible as e.g. a chart reading "23:41" while the header clock reads
+// "00:30"). toLocaleString/toLocaleTimeString/toLocaleDateString use the
+// browser's local timezone by default when no `timeZone` option is passed,
+// which is what we want here.
+function localTickMark(time, tickMarkType) {
+  const d = new Date(time * 1000)
+  switch (tickMarkType) {
+    case TickMarkType.Year:
+      return d.toLocaleDateString(undefined, { year: 'numeric' })
+    case TickMarkType.Month:
+      return d.toLocaleDateString(undefined, { month: 'short' })
+    case TickMarkType.DayOfMonth:
+      return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+    case TickMarkType.TimeWithSeconds:
+      return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+    default:
+      return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  }
+}
+
+function localTimeFormatter(time) {
+  const d = new Date(time * 1000)
+  return d.toLocaleString(undefined, {
+    month: 'short', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit',
+  })
 }
 
 function pctChange(closes) {
@@ -194,10 +225,12 @@ export default function PriceChart({ symbol = 'SPY' }) {
       crosshair: { mode: 1 },
       rightPriceScale: { borderColor: '#244873' }, // var(--border-bright)
       leftPriceScale: { visible: false, borderColor: '#244873' }, // used only when compare mode is active
+      localization: { timeFormatter: localTimeFormatter },
       timeScale: {
-        borderColor:     '#244873', // var(--border-bright)
-        timeVisible:     true,
-        secondsVisible:  false,
+        borderColor:      '#244873', // var(--border-bright)
+        timeVisible:      true,
+        secondsVisible:   false,
+        tickMarkFormatter: localTickMark,
       },
       width:  containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
