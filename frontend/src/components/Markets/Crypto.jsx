@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useCrypto } from '../../hooks/useMarketData'
+import { useCrypto, useCryptoWebull } from '../../hooks/useMarketData'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { heatBg } from '../../lib/colorScale'
 
 export default function Crypto() {
   const { data, loading } = useCrypto()
+  const { data: webullData } = useCryptoWebull()
   const [prices, setPrices] = useState({})
   const flashRef = useRef({})
 
@@ -19,6 +20,19 @@ export default function Crypto() {
       return merged
     })
   }, [data])
+
+  // Webull (stopgap, wider coverage) only fills in coins Polygon/Coinbase
+  // don't already cover — never overrides the live-streamed majors.
+  useEffect(() => {
+    if (!webullData) return
+    setPrices(prev => {
+      const merged = { ...prev }
+      for (const c of Object.values(webullData)) {
+        if (!merged[c.symbol]) merged[c.symbol] = c
+      }
+      return merged
+    })
+  }, [webullData])
 
   const onMessage = useCallback((msg) => {
     if (msg.type !== 'crypto_ticker') return
