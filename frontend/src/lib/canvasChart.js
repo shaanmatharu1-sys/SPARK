@@ -17,6 +17,8 @@ const MAX_BAR_SPACING = 40
 const VOLUME_FRACTION = 0.18   // bottom slice of the main pane reserved for volume
 const SUBPANE_FRACTION = 0.22  // height fraction per indicator sub-pane (RSI, MACD)
 const MIN_MAIN_FRACTION = 0.4  // main pane never shrinks below this, however many sub-panes are active
+const AXIS_RIGHT_WIDTH = 60    // gutter reserved for price/value labels
+const AXIS_BOTTOM_HEIGHT = 22  // gutter reserved for date/time labels
 
 export function createChartEngine(canvas, colors) {
   let bars = []
@@ -27,10 +29,14 @@ export function createChartEngine(canvas, colors) {
   let subPanes = []          // [{ label, series: [{ type: 'line'|'histogram', color, points, upColor?, downColor? }] }]
 
   let W = 0, H = 0
+  let plotW = 0, plotH = 0   // chart-plotting area, excluding the axis gutters
   let barSpacing = 8
   let rightIndex = 0         // fractional index of the rightmost visible bar
+  let barIntervalSeconds = 86400 // per-bar granularity, drives time-axis label format
   let hover = null           // { x, y } in canvas px, or null
   let dragStart = null       // { x, rightIndex }
+  let mainRangeCache = { min: 0, max: 1 }
+  let subPaneRangesCache = []
 
   const redrawListeners = new Set()
   const hoverListeners = new Set()
@@ -41,8 +47,8 @@ export function createChartEngine(canvas, colors) {
   function layout() {
     const subCount = subPanes.length
     const subTotal = Math.min(subCount * SUBPANE_FRACTION, 1 - MIN_MAIN_FRACTION)
-    const mainH = H * (1 - subTotal)
-    const subH = subCount ? (H - mainH) / subCount : 0
+    const mainH = plotH * (1 - subTotal)
+    const subH = subCount ? (plotH - mainH) / subCount : 0
     const panes = [{ top: 0, height: mainH, isMain: true }]
     for (let i = 0; i < subCount; i++) {
       panes.push({ top: mainH + i * subH, height: subH, isMain: false, index: i })
@@ -50,15 +56,19 @@ export function createChartEngine(canvas, colors) {
     return { mainH, subH, panes }
   }
 
+  function usableHeightFor(pane) {
+    return pane.isMain && showVolume ? pane.height * (1 - VOLUME_FRACTION) : pane.height
+  }
+
   function visibleIndexRange() {
-    const barsVisible = W / barSpacing
+    const barsVisible = plotW / barSpacing
     const lo = Math.max(0, Math.floor(rightIndex - barsVisible))
     const hi = Math.min(bars.length - 1, Math.ceil(rightIndex))
     return { lo, hi }
   }
 
-  function indexToX(idx) { return W - (rightIndex - idx) * barSpacing }
-  function xToIndex(x) { return rightIndex - (W - x) / barSpacing }
+  function indexToX(idx) { return plotW - (rightIndex - idx) * barSpacing }
+  function xToIndex(x) { return rightIndex - (plotW - x) / barSpacing }
 
   function timeToX(t) {
     if (!bars.length) return null
@@ -101,25 +111,58 @@ export function createChartEngine(canvas, colors) {
   }
 
   function priceToYIn(p, range, pane) {
-    const usableH = pane.isMain && showVolume ? pane.height * (1 - VOLUME_FRACTION) : pane.height
+    const usableH = usableHeightFor(pane)
     return pane.top + (range.max - p) / (range.max - range.min) * usableH
   }
   function yToPriceIn(y, range, pane) {
-    const usableH = pane.isMain && showVolume ? pane.height * (1 - VOLUME_FRACTION) : pane.height
+    const usableH = usableHeightFor(pane)
     return range.max - (y - pane.top) / usableH * (range.max - range.min)
   }
 
   // Public price<->y only operates on the MAIN pane's price scale (matches
   // the lightweight-charts API shape ChartDrawingLayer.jsx already calls).
-  let mainRangeCache = { min: 0, max: 1 }
   function priceToY(p) { return priceToYIn(p, mainRangeCache, layout().panes[0]) }
   function yToPrice(y) { return yToPriceIn(y, mainRangeCache, layout().panes[0]) }
+
+  function formatAxisValue(v, span) {
+    if (v == null || isNaN(v)) return ''
+    if (span < 1) return v.toFixed(4)
+    if (span >= 1000) return v.toFixed(0)
+    return v.toFixed(2)
+  }
+
+  function formatTimeLabel(t) {
+    const d = new Date(t * 1000)
+    if (barIntervalSeconds < 86400) {
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false })
+    }
+    if (barIntervalSeconds < 86400 * 25) {
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    }
+    return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+  }
+
+  function computeTimeTicks(lo, hi) {
+    const minPxPerLabel = 80
+    const stepBars = Math.max(1, Math.round(minPxPerLabel / barSpacing))
+    const ticks = []
+    const start = Math.ceil(lo / stepBars) * stepBars
+    for (let i = start; i <= hi; i += stepBars) {
+      if (i < 0 || i >= bars.length) continue
+      const x = indexToX(i)
+      if (x < 0 || x > plotW) continue
+      ticks.push({ i, x })
+    }
+    return ticks
+  }
 
   function draw() {
     if (!canvas || !bars.length) return
     const ctx = canvas.getContext('2d')
     W = canvas.width = canvas.clientWidth
     H = canvas.height = canvas.clientHeight
+    plotW = Math.max(0, W - AXIS_RIGHT_WIDTH)
+    plotH = Math.max(0, H - AXIS_BOTTOM_HEIGHT)
     ctx.clearRect(0, 0, W, H)
 
     const { lo, hi } = visibleIndexRange()
@@ -130,8 +173,11 @@ export function createChartEngine(canvas, colors) {
     // excluded here — only overlays sharing the main price scale count.
     const extraForRange = overlays.flatMap(o => o.points.filter(p => p.t >= bars[lo].t && p.t <= bars[hi].t))
     mainRangeCache = priceRangeFor(lo, hi, extraForRange)
+    subPaneRangesCache = []
 
-    drawGrid(ctx, mainPane)
+    const ticks = computeTimeTicks(lo, hi)
+    drawVerticalGrid(ctx, ticks)
+    drawPaneAxis(ctx, mainPane, mainRangeCache)
     if (showVolume) drawVolume(ctx, mainPane, lo, hi)
     drawSeries(ctx, mainPane, lo, hi)
     for (const o of overlays) drawLine(ctx, mainPane, mainRangeCache, o.points, o.color)
@@ -139,15 +185,44 @@ export function createChartEngine(canvas, colors) {
 
     panes.slice(1).forEach((pane, i) => drawSubPane(ctx, pane, subPanes[i], lo, hi))
 
-    if (hover) drawCrosshair(ctx, mainPane, panes)
+    drawTimeAxisLabels(ctx, ticks)
+    if (hover) drawCrosshair(ctx, panes)
   }
 
-  function drawGrid(ctx, pane) {
+  function drawVerticalGrid(ctx, ticks) {
     ctx.strokeStyle = colors.grid
     ctx.lineWidth = 1
-    for (let i = 0; i <= 4; i++) {
-      const y = pane.top + (pane.height / 4) * i
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke()
+    for (const t of ticks) {
+      ctx.beginPath(); ctx.moveTo(t.x, 0); ctx.lineTo(t.x, plotH); ctx.stroke()
+    }
+  }
+
+  function drawPaneAxis(ctx, pane, range) {
+    const usableH = usableHeightFor(pane)
+    const nLines = 4
+    ctx.strokeStyle = colors.grid
+    ctx.lineWidth = 1
+    ctx.font = '9px IBM Plex Mono, monospace'
+    for (let i = 0; i <= nLines; i++) {
+      const frac = i / nLines
+      const y = pane.top + frac * usableH
+      const price = range.max - frac * (range.max - range.min)
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(plotW, y); ctx.stroke()
+      ctx.fillStyle = colors.dimText
+      ctx.fillText(formatAxisValue(price, range.max - range.min), plotW + 4, y + 3)
+    }
+  }
+
+  function drawTimeAxisLabels(ctx, ticks) {
+    ctx.strokeStyle = colors.border
+    ctx.beginPath(); ctx.moveTo(0, plotH); ctx.lineTo(plotW, plotH); ctx.stroke()
+    ctx.font = '9px IBM Plex Mono, monospace'
+    for (const t of ticks) {
+      const label = formatTimeLabel(bars[t.i].t)
+      const textW = ctx.measureText(label).width
+      const x = Math.min(Math.max(t.x - textW / 2, 2), plotW - textW - 2)
+      ctx.fillStyle = colors.dimText
+      ctx.fillText(label, x, plotH + 14)
     }
   }
 
@@ -245,6 +320,8 @@ export function createChartEngine(canvas, colors) {
       const pad = (max - min) * 0.15
       range = { min: min - pad, max: max + pad }
     }
+    subPaneRangesCache[pane.index] = range
+    drawPaneAxis(ctx, pane, range)
 
     const bw = barWidth()
     for (const s of spec.series) {
@@ -270,31 +347,52 @@ export function createChartEngine(canvas, colors) {
     }
   }
 
-  function drawCrosshair(ctx, mainPane, panes) {
+  function drawCrosshair(ctx, panes) {
     const { x, y } = hover
+    if (x < 0 || x > plotW || y < 0 || y > plotH) return
     ctx.strokeStyle = colors.crosshair
     ctx.setLineDash([3, 3])
     ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke()
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, plotH); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(plotW, y); ctx.stroke()
     ctx.setLineDash([])
 
     const idx = Math.round(Math.min(bars.length - 1, Math.max(0, xToIndex(x))))
     const b = bars[idx]
     if (!b) return
 
-    // Price label at cursor height, OHLC readout top-left of the main pane.
-    const price = yToPriceIn(y, mainRangeCache, mainPane)
+    // Value label in the right gutter, scaled to whichever pane the cursor
+    // is actually over (main price scale, or a sub-pane's own RSI/MACD scale).
+    let hoveredPane = panes[0], hoveredRange = mainRangeCache
+    for (const p of panes) {
+      if (y >= p.top && y <= p.top + p.height) {
+        hoveredPane = p
+        hoveredRange = p.isMain ? mainRangeCache : (subPaneRangesCache[p.index] || { min: 0, max: 1 })
+        break
+      }
+    }
+    const value = yToPriceIn(y, hoveredRange, hoveredPane)
+    const label = formatAxisValue(value, hoveredRange.max - hoveredRange.min)
     ctx.font = '10px IBM Plex Mono, monospace'
-    const label = price.toFixed(2)
     ctx.fillStyle = colors.crosshairLabelBg
-    ctx.fillRect(W - 54, y - 8, 52, 16)
+    ctx.fillRect(plotW + 2, y - 8, AXIS_RIGHT_WIDTH - 4, 16)
     ctx.fillStyle = colors.text
-    ctx.fillText(label, W - 50, y + 4)
+    ctx.fillText(label, plotW + 6, y + 4)
 
+    // Time label in the bottom gutter, under the cursor.
+    const timeLabel = formatTimeLabel(b.t)
+    const timeW = ctx.measureText(timeLabel).width
+    const tx = Math.min(Math.max(x - timeW / 2 - 4, 0), plotW - timeW - 4)
+    ctx.fillStyle = colors.crosshairLabelBg
+    ctx.fillRect(tx, plotH + 2, timeW + 8, 16)
+    ctx.fillStyle = colors.text
+    ctx.fillText(timeLabel, tx + 4, plotH + 14)
+
+    // OHLC readout, top-left of the main pane.
     const d = new Date(b.t * 1000)
     const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
       (b.t % 86400 !== 0 ? ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : '')
+    ctx.font = '10px IBM Plex Mono, monospace'
     ctx.fillStyle = colors.dimText
     ctx.fillText(
       `O ${b.o.toFixed(2)}  H ${b.h.toFixed(2)}  L ${b.l.toFixed(2)}  C ${b.c.toFixed(2)}  ${dateStr}`,
@@ -310,7 +408,7 @@ export function createChartEngine(canvas, colors) {
     const idxUnderCursor = xToIndex(mx)
     const factor = ev.deltaY < 0 ? 1.15 : 1 / 1.15
     barSpacing = Math.max(MIN_BAR_SPACING, Math.min(MAX_BAR_SPACING, barSpacing * factor))
-    rightIndex = idxUnderCursor + (W - mx) / barSpacing
+    rightIndex = idxUnderCursor + (plotW - mx) / barSpacing
     clampView()
     draw()
     notifyRedraw()
@@ -336,7 +434,7 @@ export function createChartEngine(canvas, colors) {
 
   function clampView() {
     if (!bars.length) return
-    const barsVisible = W / barSpacing
+    const barsVisible = plotW / barSpacing
     rightIndex = Math.max(barsVisible * 0.5, Math.min(bars.length - 1, rightIndex))
   }
 
@@ -349,8 +447,10 @@ export function createChartEngine(canvas, colors) {
   return {
     setData(newBars) {
       bars = newBars
+      barIntervalSeconds = bars.length > 1 ? Math.max(1, bars[bars.length - 1].t - bars[bars.length - 2].t) : 86400
       rightIndex = bars.length - 1
-      barSpacing = Math.max(MIN_BAR_SPACING, Math.min(MAX_BAR_SPACING, W / Math.max(1, Math.min(bars.length, 150))))
+      const availW = Math.max(0, (canvas.clientWidth || W) - AXIS_RIGHT_WIDTH)
+      barSpacing = Math.max(MIN_BAR_SPACING, Math.min(MAX_BAR_SPACING, availW / Math.max(1, Math.min(bars.length, 150))))
       draw()
       notifyRedraw()
     },
