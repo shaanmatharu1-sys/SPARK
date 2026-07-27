@@ -34,7 +34,10 @@ from analytics.options.engine import (
     payoff_diagram, build_strategy, iv_rank_percentile, putcall_signal,
     vol_skew, STRATEGY_LIST,
 )
-from analytics.portfolio.manual import compute_portfolio, compute_portfolio_risk
+from analytics.portfolio.manual import (
+    compute_portfolio, compute_portfolio_risk, position_risk_contribution,
+    stress_test_portfolio, STRESS_SCENARIOS,
+)
 from cache.redis_client import cache_get, cache_set
 from auth import get_current_user
 from db import get_db
@@ -316,46 +319,103 @@ async def get_portfolio(current_user: User = Depends(get_current_user), db: Asyn
     result = compute_portfolio(holdings, prices)
     # Flag any symbols still awaiting a real quote, so the UI can show a subtle marker
     result["pending_prices"] = [s for s in symbols if s not in {**last_known}]
-    result["risk"] = await _portfolio_risk_block(result["positions"])
+    result["risk"], result["risk_contribution"] = await _portfolio_risk_block(result["positions"])
     return result
 
 
-async def _portfolio_risk_block(positions: list[dict], days: int = 180) -> dict:
-    """Fetch trailing daily closes for the book + SPY and derive risk stats (see
-    analytics.portfolio.manual.compute_portfolio_risk for the actual math)."""
+async def _fetch_returns(symbols: set[str], start: str, end: str):
+    """Daily closes -> simple returns for a set of symbols over [start, end].
+    Returns (returns_by_symbol, quant_module) or (None, None) on failure."""
     import sys, os
     _quant_path = os.path.join(os.path.dirname(__file__), "..", "cpp_ext", "quant")
     sys.path.insert(0, os.path.abspath(_quant_path))
     try:
-        import quant_module as q
+        import quant_module as qm
     except ImportError:
-        return {"error": "quant_module not compiled"}
-
-    held_symbols = {p["symbol"] for p in positions if p.get("weight")}
-    if not held_symbols:
-        return {"error": "no priced positions"}
-
-    today = datetime.date.today().isoformat()
-    start = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+        return None, None
 
     async def closes_for(sym):
         try:
-            bars = await fetch_agg_bars(sym, 1, "day", start, today, limit=5000)
+            bars = await fetch_agg_bars(sym, 1, "day", start, end, limit=5000)
             return sym, [b["c"] for b in bars if b.get("c") is not None]
         except Exception:
             return sym, []
 
-    results = await asyncio.gather(*[closes_for(s) for s in held_symbols | {"SPY"}])
-    closes_by_symbol = dict(results)
-    bench_closes = closes_by_symbol.pop("SPY", [])
-    if len(bench_closes) < 20:
-        return {"error": "benchmark history unavailable"}
+    results = await asyncio.gather(*[closes_for(s) for s in symbols])
+    return {s: qm.simple_returns(c) for s, c in results if len(c) >= 2}, qm
 
-    returns_by_symbol = {
-        s: q.simple_returns(c) for s, c in closes_by_symbol.items() if len(c) >= 20
-    }
-    bench_returns = q.simple_returns(bench_closes)
-    return compute_portfolio_risk(positions, returns_by_symbol, bench_returns)
+
+async def _portfolio_risk_block(positions: list[dict], days: int = 180):
+    """Fetch trailing daily closes for the book + SPY and derive both the
+    beta/vol/VaR risk block and the per-position risk-contribution
+    decomposition (see analytics.portfolio.manual for the actual math)."""
+    held_symbols = {p["symbol"] for p in positions if p.get("weight")}
+    if not held_symbols:
+        return {"error": "no priced positions"}, {"error": "no priced positions"}
+
+    today = datetime.date.today().isoformat()
+    start = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    returns_by_symbol, qm = await _fetch_returns(held_symbols | {"SPY"}, start, today)
+    if qm is None:
+        err = {"error": "quant_module not compiled"}
+        return err, err
+    bench_returns = returns_by_symbol.pop("SPY", [])
+    if len(bench_returns) < 20:
+        err = {"error": "benchmark history unavailable"}
+        return err, err
+    returns_by_symbol = {s: r for s, r in returns_by_symbol.items() if len(r) >= 20}
+
+    risk = compute_portfolio_risk(positions, returns_by_symbol, bench_returns)
+    contribution = position_risk_contribution(positions, returns_by_symbol)
+    return risk, contribution
+
+
+@router.get("/portfolio/stress-test")
+async def get_portfolio_stress_test(current_user: User = Depends(get_current_user),
+                                    db: AsyncSession = Depends(get_db)):
+    """
+    Replays real historical stress episodes (see
+    analytics.portfolio.manual.STRESS_SCENARIOS) against TODAY'S position
+    sizes — "what would this exact book have lost if this exact episode
+    happened again" using each held symbol's own actual historical move,
+    not a hypothetical uniform shock.
+    """
+    holdings = await _user_holdings(db, current_user)
+    if not holdings:
+        return {"scenarios": {}, "empty": True}
+    symbols = [h["symbol"].upper() for h in holdings]
+
+    snap = await fetch_snapshot(symbols)
+    prices = {}
+    for s in symbols:
+        d = snap.get(s, {})
+        px = ((d.get("lastTrade", {}) or {}).get("p")
+              or (d.get("day", {}) or {}).get("c")
+              or (d.get("prevDay", {}) or {}).get("c"))
+        if px:
+            prices[s] = px
+    positions = compute_portfolio(holdings, prices)["positions"]
+
+    async def one_scenario(key, cfg):
+        returns_by_symbol, _ = await _fetch_returns(set(symbols), cfg["start"], cfg["end"])
+        scenario_returns = {}
+        for sym in symbols:
+            closes_ret = returns_by_symbol.get(sym) if returns_by_symbol else None
+            # Cumulative return across the window: compound the daily
+            # simple returns rather than just (last - first)/first, so it's
+            # exact even if a day is missing from the bar series.
+            if closes_ret:
+                cum = 1.0
+                for r in closes_ret:
+                    cum *= (1.0 + r)
+                scenario_returns[sym] = cum - 1.0
+        out = stress_test_portfolio(positions, scenario_returns)
+        out["label"] = cfg["label"]
+        out["start"], out["end"] = cfg["start"], cfg["end"]
+        return key, out
+
+    results = await asyncio.gather(*[one_scenario(k, c) for k, c in STRESS_SCENARIOS.items()])
+    return {"scenarios": dict(results)}
 
 
 @router.put("/portfolio")
