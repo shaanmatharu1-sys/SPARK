@@ -220,7 +220,16 @@ async def options_flow(symbol: str):
     put_vol  = sum((c.get("day", {}) or {}).get("volume", 0) or 0 for c in chain if ctype(c) == "put")
     call_oi  = sum(c.get("open_interest", 0) or 0 for c in chain if ctype(c) == "call")
     put_oi   = sum(c.get("open_interest", 0) or 0 for c in chain if ctype(c) == "put")
-    result = putcall_signal(call_vol, put_vol, call_oi, put_oi)
+
+    # Same rolling-history cache pattern as options_iv_rank above, so the
+    # sentiment read is against this symbol's own trailing PCR range.
+    hist_key = f"pcr_hist:{symbol.upper()}"
+    pcr_history = await cache_get(hist_key) or []
+    if call_vol:
+        pcr_history = (pcr_history + [put_vol / call_vol])[-252:]
+        await cache_set(hist_key, pcr_history, 86400 * 400)
+
+    result = putcall_signal(call_vol, put_vol, call_oi, put_oi, pcr_history=pcr_history)
     result["symbol"] = symbol.upper()
     return result
 

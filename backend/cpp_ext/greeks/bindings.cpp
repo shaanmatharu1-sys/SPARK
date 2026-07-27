@@ -92,4 +92,23 @@ PYBIND11_MODULE(greeks_module, m) {
             Returns       : list[list[float]]  — IV surface (same shape)
         )pbdoc"
     );
+
+    // ── crr_american_price ───────────────────────────────────────────────────
+    m.def("crr_american_price",
+        &greeks::crr_american_price,
+        py::arg("S"),
+        py::arg("K"),
+        py::arg("T"),
+        py::arg("r"),
+        py::arg("sigma"),
+        py::arg("is_call") = true,
+        py::arg("q") = 0.0,
+        py::arg("n_steps") = 200,
+        R"pbdoc(
+            American-style option price via a Cox-Ross-Rubinstein binomial
+            tree. Black-Scholes/Merton prices EUROPEAN exercise only; use
+            this for American options (most listed US equity options),
+            especially dividend-payers where early exercise can be optimal.
+        )pbdoc"
+    );
 }

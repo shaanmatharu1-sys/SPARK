@@ -55,6 +55,43 @@ Greeks compute_greeks(double S, double K, double T, double r, double sigma, bool
 }
 
 
+namespace {
+
+// Bisection fallback: Black-Scholes/Merton price is monotonically increasing
+// in sigma, so this always converges given a valid bracket, unlike Newton-
+// Raphson which can diverge from a bad initial guess (the Brenner-
+// Subrahmanyam approximation below is only accurate near-the-money — for
+// deep ITM/OTM strikes, especially short-dated ones, it can be off by an
+// order of magnitude and send Newton's step outside the feasible region).
+double bisect_iv(double market_price, double S, double K, double T, double r,
+                 bool is_call, double q, double tol, int max_iter) {
+    double lo = 1e-4, hi = 6.0;
+    double f_lo, f_hi;
+    try {
+        f_lo = compute_greeks(S, K, T, r, lo, is_call, q).price - market_price;
+        f_hi = compute_greeks(S, K, T, r, hi, is_call, q).price - market_price;
+    } catch (...) {
+        return -1.0;
+    }
+    if (f_lo * f_hi > 0.0) return -1.0;  // market price outside the feasible range
+
+    for (int i = 0; i < max_iter; ++i) {
+        double mid = 0.5 * (lo + hi);
+        double f_mid;
+        try {
+            f_mid = compute_greeks(S, K, T, r, mid, is_call, q).price - market_price;
+        } catch (...) {
+            return -1.0;
+        }
+        if (std::abs(f_mid) < tol) return mid;
+        if (f_lo * f_mid < 0.0) { hi = mid; f_hi = f_mid; }
+        else                    { lo = mid; f_lo = f_mid; }
+    }
+    return 0.5 * (lo + hi);
+}
+
+} // namespace
+
 double implied_volatility(double market_price, double S, double K, double T, double r,
                           bool is_call, int max_iter, double tol, double q) {
     if (market_price <= 0.0 || T <= 0.0) return -1.0;
@@ -68,7 +105,7 @@ double implied_volatility(double market_price, double S, double K, double T, dou
         try {
             g = compute_greeks(S, K, T, r, sigma, is_call, q);
         } catch (...) {
-            return -1.0;
+            break;  // fall through to the bisection fallback below
         }
 
         double price_diff = g.price - market_price;
@@ -78,13 +115,16 @@ double implied_volatility(double market_price, double S, double K, double T, dou
 
         // vega is per 1% move, need raw vega for Newton step
         double raw_vega = g.vega * 100.0;
-        if (std::abs(raw_vega) < 1e-10) return -1.0;
+        if (std::abs(raw_vega) < 1e-10) break;  // near-zero vega -> bisection instead
 
         sigma -= price_diff / raw_vega;
-        sigma  = std::max(0.001, std::min(sigma, 10.0));
+        if (sigma <= 0.0 || sigma > 10.0) break;  // stepped out of range -> bisection instead
     }
 
-    return -1.0;  // no convergence
+    // Newton-Raphson didn't converge (bad initial guess, zero vega, or it
+    // stepped outside the valid range) — bisection always converges given
+    // a valid bracket, just slower.
+    return bisect_iv(market_price, S, K, T, r, is_call, q, tol, 100);
 }
 
 
@@ -114,6 +154,40 @@ std::vector<std::vector<double>> iv_surface(
     }
 
     return surface;
+}
+
+
+double crr_american_price(double S, double K, double T, double r, double sigma,
+                          bool is_call, double q, int n_steps) {
+    if (T <= 0.0 || S <= 0.0 || K <= 0.0 || sigma <= 0.0) return 0.0;
+    if (n_steps < 1) n_steps = 1;
+
+    double dt = T / n_steps;
+    double u  = std::exp(sigma * std::sqrt(dt));
+    double d  = 1.0 / u;
+    double disc = std::exp(-r * dt);
+    double p  = (std::exp((r - q) * dt) - d) / (u - d);
+    // Guard against a degenerate tree (extreme sigma/dt) producing p outside [0,1]
+    p = std::max(0.0, std::min(1.0, p));
+
+    // Terminal payoffs across the n_steps+1 final nodes
+    std::vector<double> values(n_steps + 1);
+    for (int j = 0; j <= n_steps; ++j) {
+        double S_T = S * std::pow(u, j) * std::pow(d, n_steps - j);
+        values[j] = is_call ? std::max(S_T - K, 0.0) : std::max(K - S_T, 0.0);
+    }
+
+    // Backward induction; at each node take max(continuation, early exercise)
+    for (int step = n_steps - 1; step >= 0; --step) {
+        for (int j = 0; j <= step; ++j) {
+            double continuation = disc * (p * values[j + 1] + (1.0 - p) * values[j]);
+            double S_node = S * std::pow(u, j) * std::pow(d, step - j);
+            double exercise = is_call ? std::max(S_node - K, 0.0) : std::max(K - S_node, 0.0);
+            values[j] = std::max(continuation, exercise);
+        }
+    }
+
+    return values[0];
 }
 
 } // namespace greeks

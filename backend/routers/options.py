@@ -15,6 +15,7 @@ from cache.redis_client import subscribe
 from auth import get_current_user
 from db import get_db
 from models import User, OptionPosition
+from analytics.options.engine import gamma_exposure_profile
 import asyncio
 import json
 
@@ -178,6 +179,117 @@ async def get_options_chain_full(
         "spot": spot, "atm_strike": atm_strike, "rows": rows,
         "total_strikes": total_rows, "showing": len(rows), "window": window,
     }
+
+
+@router.get("/{symbol}/american-price")
+async def get_american_price(
+    symbol: str,
+    strike: float = Query(...),
+    expiration_date: str = Query(...),
+    contract_type: str = Query(default="call"),
+    iv: float = Query(default=None, description="Override IV (decimal); else read from the chain"),
+):
+    """
+    GET /options/AAPL/american-price?strike=190&expiration_date=2026-08-21&contract_type=call
+    Compares the European (Black-Scholes/Merton) price against the American
+    price (CRR binomial tree, analytics via cpp_ext.greeks.crr_american_price)
+    for one specific contract — the early-exercise premium the flat BS model
+    misses, which matters most for dividend-payers and deep ITM puts.
+    """
+    from cpp_ext.greeks import greeks_module
+
+    symbol = symbol.upper()
+    is_call = contract_type.lower() == "call"
+
+    contracts_task = fetch_options_snapshot(symbol)
+    spot_task = fetch_snapshot([symbol])
+    contracts, snap = await contracts_task, await spot_task
+
+    s = snap.get(symbol, {})
+    spot = (s.get("lastTrade", {}) or {}).get("p") or (s.get("day", {}) or {}).get("c") \
+        or (s.get("prevDay", {}) or {}).get("c")
+    if not spot:
+        return {"error": "could not determine spot price", "symbol": symbol}
+
+    if iv is None:
+        for c in contracts:
+            d = c.get("details", {})
+            if (d.get("strike_price") == strike and d.get("expiration_date") == expiration_date
+                    and d.get("contract_type", "").lower() == contract_type.lower()):
+                iv = c.get("implied_volatility") or (c.get("greeks", {}) or {}).get("iv")
+                break
+    if not iv or iv <= 0:
+        return {"error": "no IV available for this contract — pass iv= explicitly",
+                "symbol": symbol, "strike": strike, "expiration": expiration_date}
+
+    exp_dt = datetime.datetime.strptime(expiration_date, "%Y-%m-%d")
+    T = max((exp_dt - datetime.datetime.now()).days / 365.0, 1e-6)
+
+    curve, div_yield = await asyncio.gather(
+        fetch_yield_curve(), fetch_dividend_yield(symbol, spot)
+    )
+    r = interpolate_treasury_rate(curve, T) if curve else 0.05
+
+    euro = greeks_module.compute_greeks(S=spot, K=strike, T=T, r=r, sigma=iv,
+                                        is_call=is_call, q=div_yield)
+    amer_price = greeks_module.crr_american_price(S=spot, K=strike, T=T, r=r, sigma=iv,
+                                                   is_call=is_call, q=div_yield, n_steps=300)
+
+    return {
+        "symbol": symbol, "strike": strike, "expiration": expiration_date,
+        "contract_type": contract_type, "spot": spot, "iv": round(iv, 4),
+        "r": round(r, 4), "dividend_yield": round(div_yield, 5), "T": round(T, 4),
+        "european_price": round(euro.price, 4),
+        "american_price": round(amer_price, 4),
+        "early_exercise_premium": round(amer_price - euro.price, 4),
+    }
+
+
+@router.get("/{symbol}/gamma-exposure")
+async def get_gamma_exposure(symbol: str, expiration_date: str = Query(default=None)):
+    """
+    GET /options/AAPL/gamma-exposure[?expiration_date=2026-08-21]
+    Dealer gamma-exposure (GEX) proxy by strike — see
+    analytics.options.engine.gamma_exposure_profile for the methodology and
+    its customer-flow sign convention. Defaults to combining every
+    expiration Polygon returns; pass expiration_date to isolate one.
+    """
+    symbol = symbol.upper()
+    contracts_task = fetch_options_snapshot(symbol)
+    spot_task = fetch_snapshot([symbol])
+    contracts, snap = await contracts_task, await spot_task
+
+    s = snap.get(symbol, {})
+    spot = (s.get("lastTrade", {}) or {}).get("p") or (s.get("day", {}) or {}).get("c") \
+        or (s.get("prevDay", {}) or {}).get("c")
+    if not spot:
+        return {"error": "could not determine spot price", "symbol": symbol}
+
+    curve, div_yield = await asyncio.gather(
+        fetch_yield_curve(), fetch_dividend_yield(symbol, spot)
+    )
+
+    rows = []
+    for c in contracts:
+        details = c.get("details", {})
+        exp = details.get("expiration_date")
+        if expiration_date and exp != expiration_date:
+            continue
+        iv = c.get("implied_volatility") or (c.get("greeks", {}) or {}).get("iv")
+        rows.append({
+            "strike":        details.get("strike_price"),
+            "type":          details.get("contract_type"),
+            "open_interest": c.get("open_interest"),
+            "iv":            iv,
+            "expiration":    exp,
+        })
+
+    r = interpolate_treasury_rate(curve, 0.1) if curve else 0.05  # short-tenor proxy
+
+    result = gamma_exposure_profile(rows, spot, r=r, dividend_yield=div_yield)
+    result["symbol"] = symbol
+    result["expiration_filter"] = expiration_date
+    return result
 
 
 # ════════════════════════════════════════════════════════════════

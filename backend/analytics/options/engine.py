@@ -5,6 +5,7 @@ Options quant research:
   2. IV rank / IV percentile
   3. Put/call flow signals
   4. Vol surface helpers (skew, term structure)
+  5. Dealer gamma-exposure (GEX) proxy from open interest
 
 Uses the C++ greeks_module for pricing/Greeks.
 """
@@ -12,6 +13,7 @@ import sys
 import os
 import math
 import logging
+import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -148,20 +150,42 @@ def iv_rank_percentile(current_iv: float, iv_history: list[float]) -> dict:
 
 # ── 3. Put/call flow signal ──────────────────────────────────────────────────
 def putcall_signal(call_volume: float, put_volume: float,
-                   call_oi: float = None, put_oi: float = None) -> dict:
-    """Put/call ratio + a simple sentiment read."""
+                   call_oi: float = None, put_oi: float = None,
+                   pcr_history: list[float] = None) -> dict:
+    """
+    Put/call ratio + a sentiment read against ITS OWN trailing history for
+    this symbol (percentile-based, the same approach iv_rank_percentile
+    already uses correctly) rather than fixed thresholds like `> 1.2` —
+    those numbers mean very different things for a name that normally
+    trades PCR 0.5 vs one that normally trades PCR 1.5.
+    pcr_history: past daily pcr_volume observations, oldest -> newest
+    (caller maintains this — see routers/research_ext.py's options_flow,
+    same rolling-cache pattern as the IV-rank history).
+    """
     pcr_vol = put_volume / call_volume if call_volume else None
     pcr_oi = (put_oi / call_oi) if (call_oi and put_oi) else None
 
-    # High P/C ratio = bearish positioning (often contrarian-bullish at extremes)
     sentiment = "neutral"
-    if pcr_vol is not None:
+    pcr_percentile = None
+    hist = [v for v in (pcr_history or []) if v is not None and v > 0]
+    if pcr_vol is not None and len(hist) >= 20:
+        pcr_percentile = round(sum(1 for v in hist if v < pcr_vol) / len(hist) * 100, 1)
+        # High P/C ratio = bearish positioning (often contrarian-bullish at
+        # extremes) — "high"/"low" now means relative to THIS symbol's own
+        # range, not an arbitrary constant applied to every name.
+        if pcr_percentile > 80:   sentiment = "bearish_positioning"
+        elif pcr_percentile < 20: sentiment = "bullish_positioning"
+    elif pcr_vol is not None:
+        # Not enough history yet — fall back to the old fixed-threshold read
+        # (rough, but better than no read at all while history builds).
         if pcr_vol > 1.2:   sentiment = "bearish_positioning"
         elif pcr_vol < 0.7: sentiment = "bullish_positioning"
 
     return {
         "pcr_volume": round(pcr_vol, 3) if pcr_vol else None,
         "pcr_oi":     round(pcr_oi, 3) if pcr_oi else None,
+        "pcr_percentile": pcr_percentile,
+        "history_days": len(hist),
         "call_volume": call_volume,
         "put_volume":  put_volume,
         "sentiment":   sentiment,
@@ -192,4 +216,95 @@ def vol_skew(strikes_ivs: list[dict], spot: float) -> dict:
         "skew":    round(skew, 2),
         "read":    ("put_skew (downside fear)" if skew > 2 else
                     "call_skew (upside demand)" if skew < -2 else "flat"),
+    }
+
+
+# ── 5. Dealer gamma-exposure (GEX) proxy ─────────────────────────────────────
+def _years_to_exp(exp_date: str) -> float | None:
+    try:
+        exp = datetime.datetime.strptime(exp_date, "%Y-%m-%d")
+        days = (exp - datetime.datetime.now()).days
+        return max(days / 365.0, 1e-4)
+    except Exception:
+        return None
+
+
+def gamma_exposure_profile(contracts: list[dict], spot: float, r: float = 0.05,
+                           dividend_yield: float = 0.0) -> dict:
+    """
+    Dealer gamma-exposure (GEX) proxy: converts each strike's open interest
+    into a dollar-gamma exposure using OUR OWN Greeks (nobody publishes real
+    dealer books for free — this is a market-wide positioning proxy, the
+    same kind public GEX trackers publish, not verified dealer data).
+
+    Customer-flow convention (the standard one public GEX trackers use):
+    call open interest contributes POSITIVE dealer gamma, put open interest
+    NEGATIVE — i.e. assumes dealers are net long gamma against calls and net
+    short gamma against puts. A simplifying assumption, not a fact about any
+    specific dealer's book.
+
+    contracts: [{strike, type('call'/'put'), open_interest, iv, expiration}]
+    Returns per-strike GEX, the total, a long/short-gamma regime read, and
+    the "flip" strike where cumulative GEX (walking strikes ascending)
+    changes sign — the level markets often show more/less volatility around,
+    since dealers hedging long gamma dampen moves and short gamma amplifies
+    them.
+    """
+    if not HAS_GREEKS:
+        return {"error": "greeks_module not compiled"}
+    if not spot or spot <= 0:
+        return {"error": "invalid spot"}
+
+    by_strike = {}
+    for c in contracts:
+        K, typ = c.get("strike"), c.get("type")
+        oi, iv, exp = c.get("open_interest"), c.get("iv"), c.get("expiration")
+        if not K or not oi or not iv or iv <= 0 or not exp:
+            continue
+        T = _years_to_exp(exp)
+        if not T:
+            continue
+        is_call = str(typ).lower() == "call"
+        try:
+            gr = g.compute_greeks(S=spot, K=K, T=T, r=r, sigma=iv,
+                                  is_call=is_call, q=dividend_yield)
+        except Exception:
+            continue
+        # Dollar gamma per 1% underlying move, scaled by OI and the 100-share
+        # contract multiplier.
+        dollar_gamma = gr.gamma * oi * 100 * spot * spot * 0.01
+        by_strike[K] = by_strike.get(K, 0.0) + (dollar_gamma if is_call else -dollar_gamma)
+
+    if not by_strike:
+        return {"error": "no usable contracts (need strike, type, open_interest, iv, expiration)"}
+
+    strikes = sorted(by_strike)
+    total_gex = sum(by_strike.values())
+
+    cumulative = 0.0
+    flip_strike = None
+    prev_cum = prev_strike = None
+    for k in strikes:
+        cumulative += by_strike[k]
+        if prev_cum is not None and (prev_cum < 0) != (cumulative < 0):
+            span = cumulative - prev_cum
+            frac = (-prev_cum / span) if span else 0.0
+            flip_strike = round(prev_strike + frac * (k - prev_strike), 2)
+        prev_cum, prev_strike = cumulative, k
+
+    regime = "long_gamma" if total_gex > 0 else "short_gamma"
+    return {
+        "spot":        spot,
+        "total_gex":   round(total_gex, 0),
+        "regime":      regime,
+        "flip_strike": flip_strike,
+        "interpretation": (
+            "Net dealer gamma is positive (long gamma): dealer hedging tends to "
+            "buy dips / sell rallies, which historically dampens realized volatility."
+            if regime == "long_gamma" else
+            "Net dealer gamma is negative (short gamma): dealer hedging tends to "
+            "sell into drops / buy into rallies, which historically amplifies moves."
+        ),
+        "profile":     [{"strike": k, "gex": round(by_strike[k], 0)} for k in strikes],
+        "n_strikes":   len(strikes),
     }

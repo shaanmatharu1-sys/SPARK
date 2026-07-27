@@ -76,4 +76,17 @@ std::vector<std::vector<double>> iv_surface(
     double q = 0.0
 );
 
+/**
+ * American-style option price via a Cox-Ross-Rubinstein binomial tree.
+ * Black-Scholes/Merton assumes European exercise; for American options on
+ * dividend-paying stocks (early-exercise of ITM calls can be optimal just
+ * before an ex-dividend date, and ITM puts can be worth early-exercising
+ * whenever the time value is smaller than the interest saved) it's the
+ * wrong model. This is exact in the CRR-tree sense (converges to the true
+ * American price as n_steps -> infinity); n_steps=200 is a solid default.
+ * @param n_steps  number of tree steps (more = more accurate, slower; O(n^2))
+ */
+double crr_american_price(double S, double K, double T, double r, double sigma,
+                          bool is_call, double q = 0.0, int n_steps = 200);
+
 } // namespace greeks
