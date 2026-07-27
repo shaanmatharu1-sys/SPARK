@@ -56,6 +56,53 @@ async def fetch_series(series_id: str, limit: int = 10) -> list[dict]:
     return obs
 
 
+_TENOR_YEARS = {
+    "1M": 1 / 12, "3M": 3 / 12, "6M": 6 / 12, "1Y": 1, "2Y": 2, "3Y": 3,
+    "5Y": 5, "7Y": 7, "10Y": 10, "20Y": 20, "30Y": 30,
+}
+
+_FALLBACK_RATE = 0.05  # used only if FRED is unreachable / curve is empty
+
+
+def interpolate_treasury_rate(curve: dict, T_years: float) -> float:
+    """
+    Linearly interpolate the Treasury curve (values in percent, e.g. 4.33) to
+    a given tenor and return a decimal rate (e.g. 0.0433). Flat-extrapolates
+    past the shortest/longest quoted tenor. Pure function, no I/O.
+    """
+    points = sorted(
+        ((_TENOR_YEARS[k], v) for k, v in curve.items() if k in _TENOR_YEARS),
+        key=lambda p: p[0],
+    )
+    if not points:
+        return _FALLBACK_RATE
+    if T_years <= points[0][0]:
+        return points[0][1] / 100.0
+    if T_years >= points[-1][0]:
+        return points[-1][1] / 100.0
+    for (t0, r0), (t1, r1) in zip(points, points[1:]):
+        if t0 <= T_years <= t1:
+            frac = (T_years - t0) / (t1 - t0) if t1 > t0 else 0.0
+            return (r0 + frac * (r1 - r0)) / 100.0
+    return points[-1][1] / 100.0  # unreachable, but keeps the function total
+
+
+async def fetch_risk_free_rate(T_years: float = None) -> float:
+    """
+    Risk-free rate for options pricing, from the live Treasury curve
+    interpolated to the option's time-to-expiry (options pricing previously
+    hardcoded a flat 5% regardless of tenor or where rates actually are).
+    T_years=None returns the 3M bill rate — a reasonable short-tenor default.
+    Falls back to a flat 5% only if FRED is unreachable.
+    """
+    curve = await fetch_yield_curve()
+    if not curve:
+        return _FALLBACK_RATE
+    if T_years is None:
+        return curve.get("3M", curve.get("1M", 5.0)) / 100.0
+    return interpolate_treasury_rate(curve, T_years)
+
+
 async def fetch_yield_curve() -> dict:
     """Fetch the full Treasury yield curve — all maturities."""
     cache_key = "fred:yield_curve"

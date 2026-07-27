@@ -6,6 +6,7 @@ Handles:
   - Auto-reconnect with exponential backoff
 """
 import asyncio
+import datetime
 import json
 import logging
 import time
@@ -253,6 +254,28 @@ async def fetch_dividends(symbol: str) -> list:
     results = data.get("results", []) if data else []
     await cache_set(cache_key, results, 86400)  # 24h — dividend history rarely changes intraday
     return results
+
+
+async def fetch_dividend_yield(symbol: str, spot: float) -> float:
+    """
+    Trailing-12-month dividend yield (decimal, e.g. 0.015), summing cash
+    dividends with ex-date in the last 365 days and dividing by spot.
+    Returns 0.0 for non-payers or when spot is unavailable — used as the
+    Merton continuous dividend yield `q` for options pricing, which
+    previously assumed 0 dividends for every underlying.
+    """
+    if not spot or spot <= 0:
+        return 0.0
+    divs = await fetch_dividends(symbol)
+    if not divs:
+        return 0.0
+    cutoff = (datetime.date.today() - datetime.timedelta(days=365)).isoformat()
+    ttm_cash = sum(
+        d.get("cash_amount", 0) or 0
+        for d in divs
+        if (d.get("ex_dividend_date") or "") >= cutoff
+    )
+    return round(ttm_cash / spot, 5) if ttm_cash > 0 else 0.0
 
 
 async def fetch_splits(symbol: str) -> list:

@@ -6,11 +6,16 @@ from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from websocket.manager import manager
-from services.polygon_client import fetch_options_chain, fetch_options_snapshot, fetch_agg_bars, fetch_snapshot
+from services.polygon_client import (
+    fetch_options_chain, fetch_options_snapshot, fetch_agg_bars, fetch_snapshot,
+    fetch_dividend_yield,
+)
+from services.fred_client import fetch_yield_curve, interpolate_treasury_rate
 from cache.redis_client import subscribe
 from auth import get_current_user
 from db import get_db
 from models import User, OptionPosition
+import asyncio
 import json
 
 router = APIRouter(prefix="/options", tags=["options"])
@@ -49,6 +54,13 @@ async def get_options_snapshot(symbol: str):
             from cpp_ext.greeks import greeks_module  # compiled pybind11 module
             import datetime
 
+            # Live Treasury curve (per-expiry rate) + trailing dividend yield —
+            # previously every fallback Greek used a flat r=0.05, q=0 guess
+            # regardless of tenor or whether the underlying pays a dividend.
+            curve, div_yield = await asyncio.gather(
+                fetch_yield_curve(), fetch_dividend_yield(symbol, S)
+            )
+
             for contract in data:
                 details = contract.get("details", {})
                 day     = contract.get("day", {})
@@ -63,12 +75,13 @@ async def get_options_snapshot(symbol: str):
                         T       = max((exp_dt - datetime.datetime.now()).days / 365.0, 1e-6)
                         K       = float(strike)
                         is_call = details.get("contract_type", "call").lower() == "call"
+                        r       = interpolate_treasury_rate(curve, T) if curve else 0.05
 
                         # No per-contract IV without Polygon's own Greeks, so
                         # this uses a flat 25% vol assumption — an approximate
                         # fallback, not a substitute for a real IV surface.
                         g = greeks_module.compute_greeks(
-                            S=S, K=K, T=T, r=0.05, sigma=0.25, is_call=is_call
+                            S=S, K=K, T=T, r=r, sigma=0.25, is_call=is_call, q=div_yield
                         )
                         contract["greeks"] = g
                         contract["greeks_estimated"] = True
