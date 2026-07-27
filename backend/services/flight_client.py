@@ -84,7 +84,7 @@ HUB_POINTS = [
 
 POLL_INTERVAL_SEC = 20      # full-cycle refresh cadence (measured from cycle start)
 
-# In-memory store: {hex: {icao24, callsign, lat, lon, altitude, velocity, heading, origin_country, on_ground, ts}}
+# In-memory store: {hex: {icao24, callsign, lat, lon, altitude, velocity, heading, operator, aircraft_type, on_ground, ts}}
 _flights: dict[str, dict] = {}
 _poll_started = False
 _last_fetch_ts = 0.0
@@ -121,7 +121,15 @@ def _ingest(aircraft):
             _flights[hexid] = {
                 "icao24":         hexid,
                 "callsign":       (a.get("flight") or "").strip(),
-                "origin_country": a.get("ownOp") or a.get("t") or "",
+                # adsb.lol has no country-of-registration field at all (unlike
+                # the old OpenSky feed this replaced, which did) — this used
+                # to mislabel the operator/aircraft-type code as
+                # "origin_country" (e.g. showing "E145"/"CRJ7", an aircraft
+                # type, as if it were a country). Split into the two real
+                # fields adsb.lol actually provides instead of pretending
+                # either one is a country.
+                "operator":       a.get("ownOp") or None,
+                "aircraft_type":  a.get("t") or None,
                 "lat":            lat,
                 "lon":            lon,
                 "altitude":       alt,

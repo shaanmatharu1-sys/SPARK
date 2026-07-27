@@ -93,6 +93,9 @@ TTL_SECTORS  = 30
 TTL_UNUSUAL  = 60
 TTL_FUTURES  = 60            # yfinance quotes — futures move faster than intl indices
 TTL_COT      = 259200        # 3 days — CFTC COT report only updates weekly (Fridays)
+TTL_WEATHER  = 1800           # 30min — forecasts don't need to be near-real-time
+TTL_ORDERBOOK = 5             # REST fallback only — the live book is pushed over WS
+TTL_FX       = 1800           # 30min — Frankfurter/ECB rates only update once/day anyway
 TTL_CRYPTO_WEBULL   = 20     # crypto snapshot — Webull free tier is 1 req/sec per App Key
 TTL_CRYPTO_INSTRUMENTS = 21600  # 6hr — the list of tradable crypto symbols barely changes
 

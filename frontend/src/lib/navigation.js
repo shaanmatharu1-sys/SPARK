@@ -14,6 +14,7 @@ export const CATEGORIES = [
       { id: 'world',      label: 'World' },
       { id: 'futures',    label: 'Futures' },
       { id: 'multichart', label: 'Multi-Chart' },
+      { id: 'orderbook',  label: 'Order Book' },
       { id: 'supply',     label: 'Supply Routes' },
       { id: 'news',       label: 'News' },
     ],
@@ -22,7 +23,7 @@ export const CATEGORIES = [
     label: 'Economy',
     pages: [
       { id: 'macro',  label: 'Macro' },
-      { id: 'yield',  label: 'Yield / Rates' },
+      { id: 'yield',  label: 'Fixed Income' },
       { id: 'credit', label: 'Credit' },
       { id: 'regime', label: 'Regime' },
       { id: 'events', label: 'Events' },
@@ -52,6 +53,7 @@ export const CATEGORIES = [
     pages: [
       { id: 'altdata', label: 'Alt-Data' },
       { id: 'arb',     label: 'Arbitrage' },
+      { id: 'weather', label: 'Weather' },
     ],
   },
   {

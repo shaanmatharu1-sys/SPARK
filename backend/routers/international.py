@@ -2,6 +2,7 @@
 from fastapi import APIRouter
 from services.international_client import (
     fetch_world_indices, fetch_country_etfs, fetch_adrs, fetch_fx,
+    fetch_fx_matrix, fetch_fx_history,
     fetch_international_all, fetch_country_directory,
 )
 
@@ -34,8 +35,20 @@ async def adrs():
 
 @router.get("/fx")
 async def fx():
-    """FX rates (Polygon FX)."""
+    """FX rates (Frankfurter — ECB reference rates)."""
     return await fetch_fx()
+
+
+@router.get("/fx/matrix")
+async def fx_matrix():
+    """Cross-rate matrix among the major currencies."""
+    return await fetch_fx_matrix()
+
+
+@router.get("/fx/{code}/history")
+async def fx_history(code: str, days: int = 180):
+    """Historical daily series for one currency pair's drill-down chart."""
+    return await fetch_fx_history(code, days=days)
 
 
 @router.get("/directory")
