@@ -30,15 +30,18 @@ struct Greeks {
 // ── Black-Scholes core ───────────────────────────────────────────────────────
 
 /**
- * Compute option price and all Greeks.
+ * Compute option price and all Greeks (Merton model: Black-Scholes with a
+ * continuous dividend yield q; q=0 reduces exactly to plain Black-Scholes).
  * @param S     underlying price
  * @param K     strike price
  * @param T     time to expiration in years
  * @param r     risk-free rate (decimal, e.g. 0.05)
  * @param sigma volatility (decimal, e.g. 0.25)
  * @param is_call true for call, false for put
+ * @param q     continuous dividend yield (decimal, e.g. 0.015); default 0.0
  */
-Greeks compute_greeks(double S, double K, double T, double r, double sigma, bool is_call);
+Greeks compute_greeks(double S, double K, double T, double r, double sigma, bool is_call,
+                      double q = 0.0);
 
 /**
  * Compute implied volatility via Newton-Raphson iteration.
@@ -47,10 +50,11 @@ Greeks compute_greeks(double S, double K, double T, double r, double sigma, bool
  * @param is_call       option type
  * @param max_iter      max Newton-Raphson iterations
  * @param tol           convergence tolerance
+ * @param q             continuous dividend yield (decimal); default 0.0
  * @returns IV as decimal, or -1.0 if no convergence
  */
 double implied_volatility(double market_price, double S, double K, double T, double r,
-                          bool is_call, int max_iter = 100, double tol = 1e-6);
+                          bool is_call, int max_iter = 100, double tol = 1e-6, double q = 0.0);
 
 /**
  * Compute IV surface: matrix of IVs for a grid of strikes and expirations.
@@ -60,6 +64,7 @@ double implied_volatility(double market_price, double S, double K, double T, dou
  * @param expirations    vector of T values (years)
  * @param r              risk-free rate
  * @param is_call        option type
+ * @param q              continuous dividend yield (decimal); default 0.0
  */
 std::vector<std::vector<double>> iv_surface(
     const std::vector<std::vector<double>>& market_prices,
@@ -67,7 +72,8 @@ std::vector<std::vector<double>> iv_surface(
     const std::vector<double>& strikes,
     const std::vector<double>& expirations,
     double r,
-    bool is_call
+    bool is_call,
+    double q = 0.0
 );
 
 } // namespace greeks

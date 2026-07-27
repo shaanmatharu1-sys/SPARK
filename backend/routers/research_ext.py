@@ -34,7 +34,7 @@ from analytics.options.engine import (
     payoff_diagram, build_strategy, iv_rank_percentile, putcall_signal,
     vol_skew, STRATEGY_LIST,
 )
-from analytics.portfolio.manual import compute_portfolio
+from analytics.portfolio.manual import compute_portfolio, compute_portfolio_risk
 from cache.redis_client import cache_get, cache_set
 from auth import get_current_user
 from db import get_db
@@ -307,7 +307,46 @@ async def get_portfolio(current_user: User = Depends(get_current_user), db: Asyn
     result = compute_portfolio(holdings, prices)
     # Flag any symbols still awaiting a real quote, so the UI can show a subtle marker
     result["pending_prices"] = [s for s in symbols if s not in {**last_known}]
+    result["risk"] = await _portfolio_risk_block(result["positions"])
     return result
+
+
+async def _portfolio_risk_block(positions: list[dict], days: int = 180) -> dict:
+    """Fetch trailing daily closes for the book + SPY and derive risk stats (see
+    analytics.portfolio.manual.compute_portfolio_risk for the actual math)."""
+    import sys, os
+    _quant_path = os.path.join(os.path.dirname(__file__), "..", "cpp_ext", "quant")
+    sys.path.insert(0, os.path.abspath(_quant_path))
+    try:
+        import quant_module as q
+    except ImportError:
+        return {"error": "quant_module not compiled"}
+
+    held_symbols = {p["symbol"] for p in positions if p.get("weight")}
+    if not held_symbols:
+        return {"error": "no priced positions"}
+
+    today = datetime.date.today().isoformat()
+    start = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+
+    async def closes_for(sym):
+        try:
+            bars = await fetch_agg_bars(sym, 1, "day", start, today, limit=5000)
+            return sym, [b["c"] for b in bars if b.get("c") is not None]
+        except Exception:
+            return sym, []
+
+    results = await asyncio.gather(*[closes_for(s) for s in held_symbols | {"SPY"}])
+    closes_by_symbol = dict(results)
+    bench_closes = closes_by_symbol.pop("SPY", [])
+    if len(bench_closes) < 20:
+        return {"error": "benchmark history unavailable"}
+
+    returns_by_symbol = {
+        s: q.simple_returns(c) for s, c in closes_by_symbol.items() if len(c) >= 20
+    }
+    bench_returns = q.simple_returns(bench_closes)
+    return compute_portfolio_risk(positions, returns_by_symbol, bench_returns)
 
 
 @router.put("/portfolio")

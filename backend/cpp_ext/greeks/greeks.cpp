@@ -6,7 +6,8 @@
 
 namespace greeks {
 
-Greeks compute_greeks(double S, double K, double T, double r, double sigma, bool is_call) {
+Greeks compute_greeks(double S, double K, double T, double r, double sigma, bool is_call,
+                      double q) {
     if (T <= 0.0)  throw std::invalid_argument("T must be > 0");
     if (S <= 0.0)  throw std::invalid_argument("S must be > 0");
     if (K <= 0.0)  throw std::invalid_argument("K must be > 0");
@@ -15,35 +16,38 @@ Greeks compute_greeks(double S, double K, double T, double r, double sigma, bool
     Greeks g;
     g.iv = sigma;
 
+    // Merton (1973): Black-Scholes with a continuous dividend yield q.
+    // q = 0 collapses every formula below to plain Black-Scholes.
     double sqrt_T  = std::sqrt(T);
-    double d1      = (std::log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrt_T);
+    double d1      = (std::log(S / K) + (r - q + 0.5 * sigma * sigma) * T) / (sigma * sqrt_T);
     double d2      = d1 - sigma * sqrt_T;
     double e_rT    = std::exp(-r * T);
+    double e_qT    = std::exp(-q * T);
     double pdf_d1  = norm_pdf(d1);
 
     if (is_call) {
         double Nd1  = norm_cdf(d1);
         double Nd2  = norm_cdf(d2);
-        double Nd1n = norm_cdf(-d1);
-        double Nd2n = norm_cdf(-d2);
 
-        g.price = S * Nd1  - K * e_rT * Nd2;
-        g.delta = Nd1;
-        g.gamma = pdf_d1  / (S * sigma * sqrt_T);
-        g.vega  = S * pdf_d1 * sqrt_T / 100.0;          // per 1% vol move
-        g.theta = (-S * pdf_d1 * sigma / (2.0 * sqrt_T)
-                   - r * K * e_rT * Nd2) / 365.0;       // per calendar day
-        g.rho   = K * T * e_rT * Nd2 / 100.0;           // per 1% rate move
+        g.price = S * e_qT * Nd1 - K * e_rT * Nd2;
+        g.delta = e_qT * Nd1;
+        g.gamma = e_qT * pdf_d1 / (S * sigma * sqrt_T);
+        g.vega  = S * e_qT * pdf_d1 * sqrt_T / 100.0;    // per 1% vol move
+        g.theta = (-S * e_qT * pdf_d1 * sigma / (2.0 * sqrt_T)
+                   - r * K * e_rT * Nd2
+                   + q * S * e_qT * Nd1) / 365.0;         // per calendar day
+        g.rho   = K * T * e_rT * Nd2 / 100.0;             // per 1% rate move
     } else {
         double Nd1n = norm_cdf(-d1);
         double Nd2n = norm_cdf(-d2);
 
-        g.price = K * e_rT * Nd2n - S * Nd1n;
-        g.delta = Nd1n - 1.0;                            // negative for puts
-        g.gamma = pdf_d1  / (S * sigma * sqrt_T);        // same as call
-        g.vega  = S * pdf_d1 * sqrt_T / 100.0;           // same as call
-        g.theta = (-S * pdf_d1 * sigma / (2.0 * sqrt_T)
-                   + r * K * e_rT * Nd2n) / 365.0;
+        g.price = K * e_rT * Nd2n - S * e_qT * Nd1n;
+        g.delta = -e_qT * Nd1n;                           // negative for puts
+        g.gamma = e_qT * pdf_d1 / (S * sigma * sqrt_T);   // same as call
+        g.vega  = S * e_qT * pdf_d1 * sqrt_T / 100.0;     // same as call
+        g.theta = (-S * e_qT * pdf_d1 * sigma / (2.0 * sqrt_T)
+                   + r * K * e_rT * Nd2n
+                   - q * S * e_qT * Nd1n) / 365.0;
         g.rho   = -K * T * e_rT * Nd2n / 100.0;
     }
 
@@ -52,7 +56,7 @@ Greeks compute_greeks(double S, double K, double T, double r, double sigma, bool
 
 
 double implied_volatility(double market_price, double S, double K, double T, double r,
-                          bool is_call, int max_iter, double tol) {
+                          bool is_call, int max_iter, double tol, double q) {
     if (market_price <= 0.0 || T <= 0.0) return -1.0;
 
     // Initial guess: Brenner-Subrahmanyam approximation
@@ -62,7 +66,7 @@ double implied_volatility(double market_price, double S, double K, double T, dou
     for (int i = 0; i < max_iter; ++i) {
         Greeks g;
         try {
-            g = compute_greeks(S, K, T, r, sigma, is_call);
+            g = compute_greeks(S, K, T, r, sigma, is_call, q);
         } catch (...) {
             return -1.0;
         }
@@ -90,7 +94,8 @@ std::vector<std::vector<double>> iv_surface(
     const std::vector<double>& strikes,
     const std::vector<double>& expirations,
     double r,
-    bool is_call
+    bool is_call,
+    double q
 ) {
     size_t n_exp    = expirations.size();
     size_t n_strikes = strikes.size();
@@ -101,7 +106,8 @@ std::vector<std::vector<double>> iv_surface(
         for (size_t j = 0; j < n_strikes; ++j) {
             if (i < market_prices.size() && j < market_prices[i].size()) {
                 surface[i][j] = implied_volatility(
-                    market_prices[i][j], S, strikes[j], expirations[i], r, is_call
+                    market_prices[i][j], S, strikes[j], expirations[i], r, is_call,
+                    100, 1e-6, q
                 );
             }
         }

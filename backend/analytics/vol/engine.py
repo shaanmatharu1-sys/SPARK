@@ -26,7 +26,9 @@ try:
 except ImportError:
     HAS_GREEKS = False
 
-RISK_FREE = 0.05
+from services.fred_client import interpolate_treasury_rate
+
+DEFAULT_RISK_FREE = 0.05  # fallback only, when no live Treasury curve is supplied
 
 
 def _years_to_exp(exp_date: str) -> float:
@@ -38,9 +40,17 @@ def _years_to_exp(exp_date: str) -> float:
         return None
 
 
-def build_surface(spot: float, contracts: list[dict]) -> dict:
+def build_surface(spot: float, contracts: list[dict], curve: dict = None,
+                  dividend_yield: float = 0.0) -> dict:
     """
     contracts: list of {strike, expiration, mid, type('call'/'put')}
+    curve: live Treasury yield curve from services.fred_client.fetch_yield_curve()
+           (percent values, e.g. {"3M": 5.25, "1Y": 4.9, ...}). Each contract's
+           IV is solved with the rate for ITS OWN time-to-expiry, interpolated
+           from this curve — not a single flat rate for every expiration.
+           Falls back to DEFAULT_RISK_FREE if no curve is supplied.
+    dividend_yield: continuous dividend yield (decimal) for the underlying,
+           passed to the Merton-adjusted solver; 0.0 for non-payers.
     Returns full vol surface analytics.
     """
     if not HAS_GREEKS:
@@ -61,8 +71,9 @@ def build_surface(spot: float, contracts: list[dict]) -> dict:
         if not T:
             continue
         is_call = typ == "call"
+        r = interpolate_treasury_rate(curve, T) if curve else DEFAULT_RISK_FREE
         iv = gm.implied_volatility(market_price=mid, S=spot, K=K, T=T,
-                                   r=RISK_FREE, is_call=is_call)
+                                   r=r, is_call=is_call, q=dividend_yield)
         if iv and iv > 0:
             points.append({
                 "strike":     K,

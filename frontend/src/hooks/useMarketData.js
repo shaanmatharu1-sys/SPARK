@@ -187,6 +187,12 @@ export function useMovers(direction = 'gainers') {
 export function useCrypto() {
   return useFetch('/markets/crypto', 15_000)
 }
+// Wider coin coverage via Webull's OpenAPI (stopgap — see services/webull_client.py).
+// Returns {} if WEBULL_APP_KEY/SECRET aren't configured, so callers should
+// merge this on top of useCrypto() rather than replace it.
+export function useCryptoWebull() {
+  return useFetch('/markets/crypto/webull', 20_000)
+}
 export function useEarnings(symbol) {
   return useFetch(`/markets/earnings/${symbol}`, 3600_000)
 }
