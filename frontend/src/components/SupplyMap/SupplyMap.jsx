@@ -315,7 +315,8 @@ function VesselMap({ vessels, flights, ports = [] }) {
           <div className="dim">{hover.lat?.toFixed(2)}, {hover.lon?.toFixed(2)}</div>
           {hover.altitude != null && <div className="dim">alt: {Math.round(hover.altitude * 3.28084).toLocaleString()} ft</div>}
           {hover.velocity != null && <div className="dim">speed: {Math.round(hover.velocity * 1.94384)} kn</div>}
-          {hover.origin_country && <div className="dim">{hover.origin_country}</div>}
+          {hover.aircraft_type && <div className="dim">Type: {hover.aircraft_type}</div>}
+          {hover.operator && <div className="dim">{hover.operator}</div>}
           {hover.on_ground && <div className="dim">on ground</div>}
         </div>
       )}

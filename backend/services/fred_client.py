@@ -414,6 +414,111 @@ MACRO_EXPANDED = {
 }
 
 
+# ── Global sovereign 10Y yields ──────────────────────────────────────────────
+# FRED hosts OECD's "long-term interest rate" series (10Y benchmark govt bond
+# yield, monthly, series pattern IRLTLT01<CC>M156N) for most OECD (+ a few
+# non-OECD) countries — free, already covered by the existing FRED key, no
+# new data source needed for "global fixed income depth". Every code below
+# was verified live against the real FRED API (2026-07-27) before being
+# hardcoded here; Brazil/India/China were tried and do NOT exist under this
+# series (FRED returns "series does not exist") so they're deliberately
+# left out rather than silently failing at request time.
+GLOBAL_YIELD_SERIES = {
+    "US": {"series": "DGS10",         "name": "United States", "note": "daily, not the monthly OECD series"},
+    "DE": {"series": "IRLTLT01DEM156N", "name": "Germany"},
+    "JP": {"series": "IRLTLT01JPM156N", "name": "Japan"},
+    "GB": {"series": "IRLTLT01GBM156N", "name": "United Kingdom"},
+    "FR": {"series": "IRLTLT01FRM156N", "name": "France"},
+    "IT": {"series": "IRLTLT01ITM156N", "name": "Italy"},
+    "CA": {"series": "IRLTLT01CAM156N", "name": "Canada"},
+    "ES": {"series": "IRLTLT01ESM156N", "name": "Spain"},
+    "AU": {"series": "IRLTLT01AUM156N", "name": "Australia"},
+    "KR": {"series": "IRLTLT01KRM156N", "name": "South Korea"},
+    "MX": {"series": "IRLTLT01MXM156N", "name": "Mexico"},
+    "CH": {"series": "IRLTLT01CHM156N", "name": "Switzerland"},
+    "NL": {"series": "IRLTLT01NLM156N", "name": "Netherlands"},
+    "SE": {"series": "IRLTLT01SEM156N", "name": "Sweden"},
+    "ZA": {"series": "IRLTLT01ZAM156N", "name": "South Africa"},
+    "NO": {"series": "IRLTLT01NOM156N", "name": "Norway"},
+    "PL": {"series": "IRLTLT01PLM156N", "name": "Poland"},
+}
+
+
+async def fetch_global_yields() -> dict:
+    """
+    Global sovereign 10Y benchmark yields — one row per country, each with
+    latest value, month-over-month change, and a 24-observation spark for a
+    mini trend. US uses the daily DGS10 series (more timely); every other
+    country uses OECD's monthly long-term-rate series via FRED.
+    """
+    cache_key = "fred:global_yields"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+
+    async def one(cc, meta):
+        obs = await fetch_series(meta["series"], limit=24)
+        vals = [o for o in obs if o.get("value") is not None]
+        if not vals:
+            return None
+        cur = vals[-1]["value"]
+        prev = vals[-2]["value"] if len(vals) >= 2 else cur
+        return {
+            "country": cc, "name": meta["name"], "series": meta["series"],
+            "yield_10y": cur, "change": round(cur - prev, 3),
+            "date": vals[-1]["date"], "spark": [v["value"] for v in vals],
+        }
+
+    results = await asyncio.gather(*[one(cc, meta) for cc, meta in GLOBAL_YIELD_SERIES.items()])
+    rows = [r for r in results if r]
+    rows.sort(key=lambda r: r["yield_10y"], reverse=True)
+
+    out = {"yields": rows, "as_of": rows[0]["date"] if rows else None}
+    await cache_set(cache_key, out, TTL_MACRO)
+    return out
+
+
+# ── Real yields & breakeven inflation (TIPS market) ─────────────────────────
+REAL_YIELD_SERIES = {
+    "real_5y":       {"series": "DFII5",  "label": "5Y TIPS Real Yield"},
+    "real_10y":      {"series": "DFII10", "label": "10Y TIPS Real Yield"},
+    "real_30y":      {"series": "DFII30", "label": "30Y TIPS Real Yield"},
+    "breakeven_5y":  {"series": "T5YIE",  "label": "5Y Breakeven Inflation"},
+    "breakeven_10y": {"series": "T10YIE", "label": "10Y Breakeven Inflation"},
+    "forward_5y5y":  {"series": "T5YIFR", "label": "5Y5Y Fwd Breakeven Inflation"},
+}
+
+
+async def fetch_real_yields() -> dict:
+    """
+    TIPS-market real yields + breakeven inflation — the "what does the bond
+    market actually expect inflation to be" view that the nominal Treasury
+    curve alone can't give you.
+    """
+    cache_key = "fred:real_yields"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+
+    async def one(key, meta):
+        obs = await fetch_series(meta["series"], limit=252)  # ~1yr of trading days
+        vals = [o for o in obs if o.get("value") is not None]
+        if not vals:
+            return key, None
+        cur = vals[-1]["value"]
+        prev = vals[-2]["value"] if len(vals) >= 2 else cur
+        return key, {
+            "label": meta["label"], "series": meta["series"],
+            "value": cur, "change": round(cur - prev, 3), "date": vals[-1]["date"],
+            "spark": [v["value"] for v in vals[-60:]],
+        }
+
+    results = await asyncio.gather(*[one(k, m) for k, m in REAL_YIELD_SERIES.items()])
+    out = {k: v for k, v in results if v}
+    await cache_set(cache_key, out, TTL_MACRO)
+    return out
+
+
 async def fetch_macro_expanded(category: str = None) -> dict:
     """
     Broad macro dashboard across categories. If category given, returns just that

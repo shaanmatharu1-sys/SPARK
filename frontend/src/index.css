@@ -252,6 +252,20 @@ body {
   margin-right: 6px;
 }
 
+/* News ticker marquee — track renders its content twice back-to-back and
+   loops the scroll by exactly -50%, so the loop point is seamless
+   regardless of how wide the (variable-length) content actually is. */
+@keyframes ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.news-ticker-track {
+  animation: ticker-scroll 90s linear infinite;
+}
+.news-ticker-track:hover {
+  animation-play-state: paused;
+}
+
 /* Horizontally scrollable tab strip — hide scrollbar, keep scroll */
 .tab-strip::-webkit-scrollbar { height: 0; width: 0; display: none; }
 .tab-strip { scrollbar-width: none; -ms-overflow-style: none; }

@@ -7,6 +7,8 @@ from services.fred_client import (
     fetch_macro_dashboard,
     fetch_series,
     fetch_series_history,
+    fetch_global_yields,
+    fetch_real_yields,
 )
 
 router = APIRouter(prefix="/macro", tags=["macro"])
@@ -29,6 +31,18 @@ async def get_yield_curve_extended():
     """GET /macro/yield-curve/extended — Curve + spreads + inversion + interpretation."""
     from services.fred_client import fetch_yield_curve_extended
     return await fetch_yield_curve_extended()
+
+
+@router.get("/global-yields")
+async def get_global_yields():
+    """GET /macro/global-yields — Sovereign 10Y benchmark yields across 17 countries (FRED/OECD)."""
+    return await fetch_global_yields()
+
+
+@router.get("/real-yields")
+async def get_real_yields():
+    """GET /macro/real-yields — TIPS real yields + breakeven inflation (5Y/10Y/30Y, 5Y5Y fwd)."""
+    return await fetch_real_yields()
 
 
 @router.get("/expanded")
