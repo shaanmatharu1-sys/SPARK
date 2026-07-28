@@ -392,6 +392,11 @@ export function useCompanyTies(symbol) {
 export function useInternational() {
   return useFetch('/international/all', 60_000)
 }
+export function useIndexBars(symbol, interval = '5m') {
+  // World Indices (^GSPC, ^N225, ...) aren't Polygon-covered — EODHD-backed,
+  // separate from useBars. 30s poll to match useBars' live-chart cadence.
+  return useFetch(symbol ? `/international/indices/${encodeURIComponent(symbol)}/bars?interval=${interval}` : null, 30_000)
+}
 export function useCountryDirectory() {
   return useFetch('/international/directory', 60_000)
 }
