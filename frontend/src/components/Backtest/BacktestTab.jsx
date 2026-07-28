@@ -1,5 +1,8 @@
-import React, { useState } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import React, { useState, useMemo } from 'react'
+import {
+  LineChart, Line, AreaChart, Area, ComposedChart, Scatter,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
+} from 'recharts'
 import { useIndicators, useStrategies, runCustomBacktest, runPresetBacktest } from '../../hooks/useMarketData'
 import { useSymbol } from '../../hooks/useSymbol'
 import Explain from '../common/Explain'
@@ -18,6 +21,71 @@ function StatBox({ label, value, good }) {
                   borderRadius: 5, padding: '8px 10px', minWidth: 90 }}>
       <div className="dim" style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 16, color, fontWeight: 600 }}>{value}</div>
+    </div>
+  )
+}
+
+function fmtDate(t) {
+  if (t == null) return ''
+  const d = new Date(t < 1e12 ? t * 1000 : t)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+}
+
+// Compounds daily strategy returns into calendar-month returns for the heatmap.
+function monthlyReturns(dates, returns) {
+  const byMonth = {}
+  for (let i = 0; i < returns.length; i++) {
+    if (dates[i] == null) continue
+    const d = new Date(dates[i] * 1000)
+    const key = `${d.getFullYear()}-${d.getMonth()}`
+    byMonth[key] ||= { product: 1, year: d.getFullYear(), month: d.getMonth() }
+    byMonth[key].product *= (1 + returns[i])
+  }
+  return Object.values(byMonth).map(v => ({ year: v.year, month: v.month, ret: v.product - 1 }))
+}
+
+function heatColor(ret) {
+  if (ret == null) return 'var(--bg-base)'
+  const clamped = Math.max(-0.1, Math.min(0.1, ret))
+  const a = 0.15 + Math.abs(clamped) / 0.1 * 0.5
+  return ret >= 0 ? `rgba(63,182,139,${a})` : `rgba(224,85,107,${a})`
+}
+
+const MONTH_LABELS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
+
+function MonthlyReturnsHeatmap({ dates, returns }) {
+  const cells = useMemo(() => monthlyReturns(dates || [], returns || []), [dates, returns])
+  const years = [...new Set(cells.map(c => c.year))].sort()
+  if (!years.length) return null
+  const byKey = Object.fromEntries(cells.map(c => [`${c.year}-${c.month}`, c.ret]))
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="label" style={{ marginBottom: 4 }}>Monthly Returns</div>
+      <table style={{ borderCollapse: 'collapse', fontSize: 9 }}>
+        <thead>
+          <tr>
+            <th style={{ padding: '2px 6px' }} />
+            {MONTH_LABELS.map((m, i) => <th key={i} className="dim" style={{ padding: '2px 6px', fontWeight: 500 }}>{m}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {years.map(y => (
+            <tr key={y}>
+              <td className="dim" style={{ padding: '2px 6px' }}>{y}</td>
+              {MONTH_LABELS.map((_, m) => {
+                const ret = byKey[`${y}-${m}`]
+                return (
+                  <td key={m} title={ret != null ? `${(ret * 100).toFixed(1)}%` : ''}
+                      style={{ padding: '4px 6px', textAlign: 'center', background: heatColor(ret),
+                               color: 'var(--text-primary)', minWidth: 30 }}>
+                    {ret != null ? `${(ret * 100).toFixed(0)}` : ''}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -80,7 +148,30 @@ export default function Backtest() {
   }
 
   const s = result?.stats
-  const equityData = result?.equity_curve?.map((e, i) => ({ i, equity: e })) || []
+  const hasDates = result?.dates?.length > 0
+  const equityData = useMemo(() => {
+    if (!result?.equity_curve) return []
+    const positions = result.positions || []
+    return result.equity_curve.map((e, i) => ({
+      x: hasDates ? result.dates[i] : i,
+      equity: e,
+      drawdown: result.drawdown ? result.drawdown[i] * 100 : null,
+      benchmark: result.benchmark?.equity_curve?.[i] ?? null,
+      // Mark bars where the position actually changed — an entry/exit — so
+      // trades can be pinned on the equity curve instead of being invisible.
+      trade: i > 0 && positions[i - 1] != null && positions[i] !== positions[i - 1] ? e : null,
+    }))
+  }, [result, hasDates])
+  const rollingSharpeData = useMemo(() => {
+    if (!result?.rolling_sharpe) return []
+    // strategy_returns/rolling_sharpe are one shorter than equity_curve/dates
+    // (returns, not levels) — offset by 1 to line back up with real dates.
+    return result.rolling_sharpe.map((v, i) => ({
+      x: hasDates ? result.dates[i + 1] : i + 1,
+      sharpe: v,
+    }))
+  }, [result, hasDates])
+  const xTick = hasDates ? fmtDate : undefined
 
   return (
     <div className="panel" style={{ height: '100%' }}>
@@ -150,22 +241,72 @@ export default function Backtest() {
                 <StatBox label="Calmar" value={s.calmar?.toFixed(2)} good={s.calmar > 0.5} />
                 <StatBox label="Hit Rate" value={`${(s.hit_rate * 100).toFixed(0)}%`} good={s.hit_rate > 0.5} />
                 <StatBox label="Trades" value={s.n_trades} />
+                {result.total_cost_bps_paid != null && (
+                  <StatBox label="Costs Paid" value={`${result.total_cost_bps_paid.toFixed(0)}bps`} />
+                )}
               </div>
-              <div style={{ height: 280 }}>
+
+              <div className="dim" style={{ fontSize: 9, marginBottom: 2 }}>
+                EQUITY CURVE{result.benchmark ? ` — vs ${result.benchmark.symbol} buy &amp; hold` : ''}
+              </div>
+              <div style={{ height: 240 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={equityData}>
+                  <ComposedChart data={equityData}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="2 2" />
-                    <XAxis dataKey="i" stroke="var(--text-dim)" fontSize={10} />
+                    <XAxis dataKey="x" tickFormatter={xTick} stroke="var(--text-dim)" fontSize={10} minTickGap={50} />
                     <YAxis stroke="var(--text-dim)" fontSize={10} domain={['auto', 'auto']} />
-                    <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)', fontSize: 11 }} />
-                    <Line type="monotone" dataKey="equity" stroke="var(--gold)" dot={false} strokeWidth={1.5} />
+                    <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)', fontSize: 11 }}
+                             labelFormatter={xTick} />
+                    {result.benchmark && (
+                      <Line type="monotone" dataKey="benchmark" stroke="var(--steel-bright)" strokeDasharray="3 3"
+                            dot={false} strokeWidth={1.2} isAnimationActive={false} name={result.benchmark.symbol} />
+                    )}
+                    <Line type="monotone" dataKey="equity" stroke="var(--gold)" dot={false} strokeWidth={1.5}
+                          isAnimationActive={false} name="Strategy" />
+                    <Scatter dataKey="trade" fill="var(--gold-bright)" shape="circle" legendType="none" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="dim" style={{ fontSize: 9, margin: '6px 0 2px' }}>DRAWDOWN</div>
+              <div style={{ height: 60 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={equityData}>
+                    <XAxis dataKey="x" hide />
+                    <YAxis hide domain={['auto', 0]} />
+                    <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)', fontSize: 10 }}
+                             formatter={(v) => [`${v?.toFixed(2)}%`, 'Drawdown']} labelFormatter={xTick} />
+                    <Area type="monotone" dataKey="drawdown" stroke="var(--red)" fill="var(--red)"
+                          fillOpacity={0.25} strokeWidth={1} isAnimationActive={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="dim" style={{ fontSize: 9, margin: '6px 0 2px' }}>ROLLING SHARPE (60-period)</div>
+              <div style={{ height: 60 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={rollingSharpeData}>
+                    <XAxis dataKey="x" hide />
+                    <YAxis hide domain={['auto', 'auto']} />
+                    <ReferenceLine y={0} stroke="var(--text-dim)" strokeDasharray="2 2" />
+                    <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)', fontSize: 10 }}
+                             formatter={(v) => [v?.toFixed(2), 'Rolling Sharpe']} labelFormatter={xTick} />
+                    <Line type="monotone" dataKey="sharpe" stroke="var(--cyan)" dot={false} strokeWidth={1.2} isAnimationActive={false} connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+
+              {hasDates && result.strategy_returns && (
+                <MonthlyReturnsHeatmap dates={result.dates.slice(1)} returns={result.strategy_returns} />
+              )}
+
               <div className="dim" style={{ fontSize: 9, marginTop: 8, lineHeight: 1.5 }}>
-                Equity curve = growth of $1 following the strategy, after {result.total_turnover ? 'transaction costs' : 'costs'}.
-                Long/flat only (no shorting/leverage). Past performance on historical data does not predict future results —
-                and beware overfitting: a great backtest on one symbol often fails out-of-sample.
+                Equity curve = growth of $1 following the strategy, net of a realistic cost model
+                (commission + spread + slippage + size-scaled market impact —
+                {result.cost_model ? ` ${result.cost_model.commission_bps}bps commission, ${result.cost_model.spread_bps}bps spread, ${result.cost_model.slippage_bps}bps slippage, ${result.cost_model.impact_coef}bps/unit impact` : ' see cost_model'}).
+                Gold dots mark entries/exits. Long/flat only (no shorting/leverage).
+                Past performance on historical data does not predict future results — and beware
+                overfitting: a great backtest on one symbol often fails out-of-sample.
               </div>
             </>
           )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useSymbol } from '../../hooks/useSymbol'
 import {
   LineChart, Line, ScatterChart, Scatter, XAxis, YAxis,
@@ -6,6 +6,15 @@ import {
 } from 'recharts'
 import { useVolSurface } from '../../hooks/useMarketData'
 import Surface3D from './Surface3D'
+
+// "Computed a minute ago" is fine; "computed 40 minutes ago" during an
+// options-relevant move is materially stale and worth flagging in color.
+function freshnessColor(ageMin) {
+  if (ageMin == null) return 'var(--text-dim)'
+  if (ageMin < 5)  return 'var(--green)'
+  if (ageMin < 15) return 'var(--gold)'
+  return 'var(--red)'
+}
 
 function Metric({ label, value, color }) {
   return (
@@ -88,14 +97,31 @@ export default function VolSurface() {
     return { expirations, moneynessBuckets, rows, min, max }
   }, [data])
 
-  const termData = (data?.term_structure || [])
-    .slice().sort((a, b) => a.T - b.T)
-    .map(t => ({ exp: t.expiration?.slice(5), iv: (t.atm_iv * 100).toFixed(1), T: t.T }))
+  const termData = useMemo(() => {
+    const current = (data?.term_structure || []).slice().sort((a, b) => a.T - b.T)
+    const prior = (data?.term_structure_prior_week || []).slice().sort((a, b) => a.T - b.T)
+    // Prior-week contracts rarely share exact expiration dates with today's
+    // (weeklies roll), so line up by term-structure position (front month vs
+    // front month, etc.) rather than an exact date match.
+    return current.map((t, i) => ({
+      exp: t.expiration?.slice(5),
+      iv: +(t.atm_iv * 100).toFixed(1),
+      ivPrior: prior[i] ? +(prior[i].atm_iv * 100).toFixed(1) : null,
+      T: t.T,
+    }))
+  }, [data])
+
+  const ageMin = data?.computed_at ? (Date.now() - new Date(data.computed_at + 'Z').getTime()) / 60000 : null
 
   return (
     <div className="panel" style={{ height: '100%' }}>
       <div className="panel-header">
         <span className="title">Vol Surface</span>
+        {ageMin != null && (
+          <span style={{ fontSize: 9, color: freshnessColor(ageMin) }} title={data.computed_at + 'Z'}>
+            ● as of {ageMin < 1 ? '<1m ago' : `${Math.round(ageMin)}m ago`}
+          </span>
+        )}
         <input value={input} onChange={e => setInput(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && setSymbol(input)}
           style={{ background: 'var(--bg-base)', border: '1px solid var(--border-accent)',
@@ -119,10 +145,23 @@ export default function VolSurface() {
               <Metric label="SKEW"
                 value={s.skew_direction || '—'}
                 color={s.skew_direction === 'put skew' ? 'var(--yellow)' : 'var(--blue-bright)'} />
+              <Metric label="IV RANK"
+                value={data.iv_rank?.iv_rank != null ? `${data.iv_rank.iv_rank.toFixed(0)}%` : '—'}
+                color={data.iv_rank?.iv_rank > 70 ? 'var(--red)' : data.iv_rank?.iv_rank < 30 ? 'var(--green)' : null} />
+              <Metric label="IV PCTL"
+                value={data.iv_rank?.iv_percentile != null ? `${data.iv_rank.iv_percentile.toFixed(0)}%` : '—'} />
             </div>
+            {data.iv_rank?.iv_rank == null && (
+              <div className="dim" style={{ fontSize: 8, marginTop: -6, marginBottom: 8 }}>
+                IV rank/percentile need a few snapshots of history for this symbol — check back after
+                the surface has been pulled a couple more times.
+              </div>
+            )}
 
             {/* Term structure */}
-            <div className="dim" style={{ fontSize: 9, margin: '4px 0' }}>ATM TERM STRUCTURE</div>
+            <div className="dim" style={{ fontSize: 9, margin: '4px 0' }}>
+              ATM TERM STRUCTURE{termData.some(t => t.ivPrior != null) ? ' — vs 1 week ago (dashed)' : ''}
+            </div>
             <div style={{ height: 120 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={termData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
@@ -133,8 +172,10 @@ export default function VolSurface() {
                   <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
                            borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }}
                            formatter={v => `${v}%`} />
+                  <Line type="monotone" dataKey="ivPrior" stroke="var(--text-dim)" strokeWidth={1.3}
+                        strokeDasharray="4 3" dot={false} connectNulls isAnimationActive={false} name="1wk ago" />
                   <Line type="monotone" dataKey="iv" stroke="var(--steel-bright)" strokeWidth={2}
-                        dot={{ fill: 'var(--steel-bright)', r: 3 }} />
+                        dot={{ fill: 'var(--steel-bright)', r: 3 }} name="Now" />
                 </LineChart>
               </ResponsiveContainer>
             </div>

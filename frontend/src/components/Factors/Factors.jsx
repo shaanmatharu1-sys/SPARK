@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend,
 } from 'recharts'
 import { useFactorRankings } from '../../hooks/useMarketData'
 
@@ -10,6 +10,14 @@ const FACTOR_LABELS = {
   low_vol:     'LVOL',
   trend:       'TREND',
   vol_adj_mom: 'VAM',
+}
+
+const FACTOR_COLORS = {
+  momentum:    'var(--green)',
+  short_rev:   'var(--gold)',
+  low_vol:     'var(--steel-bright)',
+  trend:       'var(--purple)',
+  vol_adj_mom: 'var(--cyan)',
 }
 
 // Heatmap color for a z-score value (-2..+2 -> red..green), built from the
@@ -27,6 +35,8 @@ function zColor(z) {
   }
 }
 
+function round4(v) { return Math.round(v * 10000) / 10000 }
+
 function BookTag({ book }) {
   if (book === 'LONG')  return <span style={{ color: 'var(--green)', fontWeight: 'bold' }}>● LONG</span>
   if (book === 'SHORT') return <span style={{ color: 'var(--red)', fontWeight: 'bold' }}>● SHORT</span>
@@ -42,6 +52,19 @@ export default function Factors() {
   const chartData = useMemo(() => (
     (data?.rankings || []).slice().sort((a, b) => b.composite - a.composite)
   ), [data])
+
+  // Additive decomposition: composite = sum(weight[f] * zscore[f]), so
+  // stacking each factor's weighted contribution reconstructs the composite
+  // bar exactly — showing whether a high score comes from broad consensus
+  // across factors or is fragile (driven by just one).
+  const contribData = useMemo(() => {
+    if (!data?.weights) return []
+    return chartData.map(r => {
+      const row = { symbol: r.symbol }
+      for (const f of factorNames) row[f] = round4((data.weights[f] || 0) * (r.factors[f] || 0))
+      return row
+    })
+  }, [chartData, data, factorNames])
 
   return (
     <div className="panel" style={{ height: '100%' }}>
@@ -83,6 +106,32 @@ export default function Factors() {
               </BarChart>
             </ResponsiveContainer>
           </div>
+        )}
+
+        {contribData.length > 0 && (
+          <>
+            <div className="dim" style={{ fontSize: 9, padding: '4px 10px 0' }}>
+              PER-FACTOR BREAKDOWN — weighted contribution to composite (stacked bars sum back to the score above)
+            </div>
+            <div style={{ height: Math.min(280, Math.max(140, contribData.length * 16)), padding: '4px 10px 0' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={contribData} layout="vertical" margin={{ top: 2, right: 24, left: 0, bottom: 2 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: 'var(--text-dim)', fontSize: 8 }}
+                         axisLine={{ stroke: 'var(--border-bright)' }} />
+                  <YAxis type="category" dataKey="symbol" width={44}
+                         tick={{ fill: 'var(--text-dim)', fontSize: 9 }} axisLine={{ stroke: 'var(--border-bright)' }} />
+                  <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                           borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                           formatter={(v, name) => [v.toFixed(3), FACTOR_LABELS[name] || name]} />
+                  <Legend wrapperStyle={{ fontSize: 9 }} formatter={(name) => FACTOR_LABELS[name] || name} />
+                  {factorNames.map(f => (
+                    <Bar key={f} dataKey={f} stackId="contrib" fill={FACTOR_COLORS[f] || 'var(--text-dim)'} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </>
         )}
 
         {data?.rankings && (

@@ -47,8 +47,11 @@ function fmtDate(ts, timespan) {
 export default function GraphBuilder() {
   const { data: meta } = useGraphFunctions()
   const [expr, setExpr] = useState('SMA(AAPL,20) - SMA(AAPL,50)')
+  const [expr2, setExpr2] = useState('')
+  const [refLine, setRefLine] = useState('')
   const [range, setRange] = useState(() => RANGE_OPTIONS.find(o => o.label === '1Y'))
   const [result, setResult] = useState(null)
+  const [result2, setResult2] = useState(null)
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(loadSaved)
 
@@ -57,8 +60,14 @@ export default function GraphBuilder() {
     const r = overrideRange ?? range
     if (!e.trim()) return
     setLoading(true)
-    try { setResult(await runGraphEval(e.trim(), r.days, r.timespan)) }
-    finally { setLoading(false) }
+    try {
+      const [r1, r2] = await Promise.all([
+        runGraphEval(e.trim(), r.days, r.timespan),
+        expr2.trim() ? runGraphEval(expr2.trim(), r.days, r.timespan) : Promise.resolve(null),
+      ])
+      setResult(r1)
+      setResult2(r2)
+    } finally { setLoading(false) }
   }
 
   const saveGraph = () => {
@@ -79,9 +88,12 @@ export default function GraphBuilder() {
     run(s.expr, s.range)
   }
 
-  const chartData = result?.points?.map(p => ({ t: p.t, v: p.v })) || []
+  const points2 = result2?.points || []
+  const chartData = result?.points?.map((p, i) => ({ t: p.t, v: p.v, v2: points2[i]?.v })) || []
   const values = chartData.map(p => p.v).filter(v => v != null)
   const last = values.length ? values[values.length - 1] : null
+  const last2 = points2.length ? points2.map(p => p.v).filter(v => v != null).at(-1) : null
+  const refLineNum = refLine.trim() !== '' && !isNaN(parseFloat(refLine)) ? parseFloat(refLine) : null
   const crossesZero = values.length > 0 && Math.min(...values) < 0 && Math.max(...values) > 0
   const isSaved = saved.some(s => s.expr === expr.trim())
 
@@ -93,11 +105,16 @@ export default function GraphBuilder() {
           <Explain title="How the Graph Builder works">
             Type a formula referencing tickers as bare names (AAPL, MSFT, ...),
             combined with + - * / and parentheses, and optionally wrapped in
-            an indicator function: SMA, EMA, RSI, ROC, ZSCORE, STD, CORR.
+            an indicator function: SMA, EMA, RSI, ROC, ZSCORE, STD, CORR,
+            BBUPPER, BBLOWER, MACDLINE, MACDSIGNAL.
             <br/><br/>
             Examples: <code>AAPL / MSFT</code> (a price ratio), <code>SMA(AAPL,20)
             - SMA(AAPL,50)</code> (a moving-average spread), <code>CORR(SPY,QQQ,30)</code>
             (rolling correlation). Up to 6 distinct tickers per formula.
+            <br/><br/>
+            The "vs" row plots a second expression on the same axes (e.g.
+            <code>ZSCORE(SPY,20)</code> vs <code>ZSCORE(QQQ,20)</code>), and "ref line"
+            draws a horizontal marker at a level you pick (e.g. 70/30 around an RSI expression).
             <br/><br/>
             1D/5D use minute bars, 1M uses hourly bars, everything else uses
             daily bars. Hit Save to keep a formula in the list on the left —
@@ -157,6 +174,18 @@ export default function GraphBuilder() {
               {isSaved ? 'Saved ✓' : 'Save'}
             </button>
           </div>
+          {/* Second (compare) expression + manual reference line — plotted on the same chart */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span className="dim" style={{ fontSize: 11, fontFamily: 'var(--font-mono)', flexShrink: 0, opacity: 0.6 }}>vs</span>
+            <input className="input" style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12 }}
+              value={expr2}
+              onChange={e => setExpr2(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && run()}
+              placeholder="optional 2nd expression, e.g. ZSCORE(QQQ,20)" />
+            <span className="dim" style={{ fontSize: 10, flexShrink: 0 }}>ref line</span>
+            <input className="input" type="number" style={{ width: 70, fontSize: 11 }}
+              value={refLine} onChange={e => setRefLine(e.target.value)} placeholder="e.g. 70" />
+          </div>
 
           {/* Example chips */}
           {meta?.examples && (
@@ -194,10 +223,18 @@ export default function GraphBuilder() {
                     {last.toFixed(4)}
                   </span>
                 )}
+                {result2 && !result2.error && (
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--cyan)' }}>
+                    vs {result2.expr}{last2 != null ? `: ${last2.toFixed(4)}` : ''}
+                  </span>
+                )}
                 <span className="dim" style={{ fontSize: 10 }}>
                   {result.symbols?.join(' · ')} · {chartData.length} bars · {range.label} ({range.timespan})
                 </span>
               </div>
+              {result2?.error && (
+                <div style={{ color: 'var(--red)', fontSize: 10 }}>2nd expression: {result2.error}</div>
+              )}
               <div style={{ flex: 1, minHeight: 260 }}>
                 <ResponsiveContainer width="100%" height={280}>
                   <LineChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
@@ -207,11 +244,18 @@ export default function GraphBuilder() {
                     <YAxis stroke="var(--text-dim)" fontSize={10} domain={['auto', 'auto']} width={64}
                       label={{ value: result.expr, angle: -90, position: 'insideLeft', fill: 'var(--text-dim)', fontSize: 9 }} />
                     {crossesZero && <ReferenceLine y={0} stroke="var(--text-dim)" strokeDasharray="3 3" />}
+                    {refLineNum != null && (
+                      <ReferenceLine y={refLineNum} stroke="var(--purple)" strokeDasharray="4 2"
+                        label={{ value: refLineNum, fill: 'var(--purple)', fontSize: 9, position: 'right' }} />
+                    )}
                     <Tooltip
                       contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)', fontSize: 11 }}
                       labelFormatter={(t) => fmtDate(t, range.timespan)}
-                      formatter={(v) => [v?.toFixed(4), result.expr]} />
+                      formatter={(v, name) => [v?.toFixed(4), name === 'v2' ? result2?.expr : result.expr]} />
                     <Line type="monotone" dataKey="v" stroke="var(--gold)" dot={false} strokeWidth={1.5} connectNulls />
+                    {result2 && !result2.error && (
+                      <Line type="monotone" dataKey="v2" stroke="var(--cyan)" dot={false} strokeWidth={1.5} connectNulls />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
               </div>

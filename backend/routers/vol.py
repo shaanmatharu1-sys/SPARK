@@ -1,11 +1,22 @@
 """
 routers/vol.py — Volatility surface analytics endpoints
 """
+import datetime
 from fastapi import APIRouter, Query
 from services.polygon_client import fetch_options_snapshot, fetch_snapshot
 from analytics.vol.engine import build_surface, iv_rank
+from cache.redis_client import cache_get, cache_set
 
 router = APIRouter(prefix="/vol", tags=["vol"])
+
+VOL_HISTORY_MAX = 60  # capped snapshot history per symbol, used for IV rank + term-structure overlay
+
+
+def _parse_iso(ts: str):
+    try:
+        return datetime.datetime.fromisoformat(ts)
+    except (TypeError, ValueError):
+        return None
 
 
 @router.get("/surface/{symbol}")
@@ -60,6 +71,36 @@ async def get_vol_surface(symbol: str):
 
     result = build_surface(spot, contracts)
     result["symbol"] = symbol
+    result["computed_at"] = datetime.datetime.utcnow().isoformat()
+    if "error" in result:
+        return result
+
+    # Append this snapshot to a rolling per-symbol history — the surface is
+    # otherwise stateless, so IV rank/percentile and "where was term structure
+    # a week ago" had nothing to compare against (iv_rank() existed but was
+    # never called with real history; the term-structure chart had no
+    # historical reference line at all).
+    atm_front = result.get("summary", {}).get("atm_iv_front")
+    if atm_front is not None:
+        hist_key = f"vol_history:{symbol}"
+        history = await cache_get(hist_key) or []
+        prior_snapshots = list(history)  # before appending the current one
+        history.append({
+            "computed_at":    result["computed_at"],
+            "atm_iv_front":   atm_front,
+            "term_structure": result["term_structure"],
+        })
+        await cache_set(hist_key, history[-VOL_HISTORY_MAX:], ttl=86400 * 30)
+
+        iv_history_values = [h["atm_iv_front"] for h in prior_snapshots]
+        result["iv_rank"] = iv_rank(atm_front, iv_history_values)
+
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+        dated = [(h, _parse_iso(h["computed_at"])) for h in prior_snapshots]
+        dated = [(h, ts) for h, ts in dated if ts is not None]
+        prior_week = min(dated, key=lambda p: abs((p[1] - cutoff).total_seconds()), default=(None, None))[0]
+        result["term_structure_prior_week"] = prior_week["term_structure"] if prior_week else None
+
     return result
 
 

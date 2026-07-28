@@ -173,6 +173,9 @@ export const algoApi = {
 export function usePairs(universe = 'watchlist', days = 400) {
   return useFetch(`/research/pairs?universe=${universe}&days=${days}`, 300_000)
 }
+export function usePairDetail(symY, symX, days = 400) {
+  return useFetch(symY && symX ? `/research/pairs/${symY}/${symX}?days=${days}` : null, null)
+}
 export function useCorrelation(universe = 'watchlist', days = 120) {
   return useFetch(`/research/correlation?universe=${universe}&days=${days}`, 300_000)
 }
@@ -295,6 +298,9 @@ export function useWebSocketHealth() {
 // ── Market regime dashboard ──
 export function useMarketRegime() {
   return useFetch('/regime/', 300_000)
+}
+export function useMarketRegimeHistory() {
+  return useFetch('/regime/history', 300_000)
 }
 
 // ── Multi-chart workspace (persisted per-user grid layout) ──

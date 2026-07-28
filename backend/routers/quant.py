@@ -8,6 +8,7 @@ from analytics.backtest.strategies import run_strategy, STRATEGY_META
 from analytics.backtest.strategies import run_custom, INDICATOR_META
 from analytics import indicators as ind
 from analytics.graphing.formula import extract_symbols, evaluate, FormulaError, FUNCTIONS
+from analytics.regime.engine import get_market_regime
 from fastapi import Body
 import asyncio
 import datetime
@@ -24,16 +25,56 @@ async def _get_closes(symbol: str, days: int = 365, timespan: str = "day") -> li
     return [b["c"] for b in bars if b.get("c") is not None]
 
 
+async def _get_closes_and_dates(symbol: str, days: int = 365, timespan: str = "day") -> tuple[list[float], list[int]]:
+    """Pull close prices + their bar timestamps (ms epoch) together, so
+    backtest results can carry real dates instead of a bare integer index."""
+    today = datetime.date.today().isoformat()
+    start = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    bars = await fetch_agg_bars(symbol.upper(), 1, timespan, start, today, limit=5000)
+    bars = [b for b in bars if b.get("c") is not None]
+    return [b["c"] for b in bars], [b["t"] // 1000 for b in bars]
+
+
+async def _get_bars_ohlcv(symbol: str, days: int = 365, timespan: str = "day") -> dict:
+    """Pull full OHLCV from Polygon agg bars — signals need more than closes
+    (ATR/ADX need highs+lows, volume-confirmation needs volume)."""
+    today = datetime.date.today().isoformat()
+    start = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    bars = await fetch_agg_bars(symbol.upper(), 1, timespan, start, today, limit=5000)
+    bars = [b for b in bars if b.get("c") is not None]
+    return {
+        "closes":  [b["c"] for b in bars],
+        "highs":   [b.get("h", b["c"]) for b in bars],
+        "lows":    [b.get("l", b["c"]) for b in bars],
+        "volumes": [b.get("v", 0) for b in bars],
+    }
+
+
 @router.get("/signals/{symbol}")
 async def get_signals(symbol: str, days: int = Query(default=365)):
     """
     GET /quant/signals/AAPL — Full statistical signal panel.
     z-score, momentum, vol regime, mean-reversion diagnostics, composite score.
+
+    Widens the composite beyond price-only inputs: pulls OHLCV (for ATR/ADX/
+    volume-confirmation), a weekly series (multi-timeframe confirmation), and
+    the cached market-wide regime snapshot (VIX-conditioned weighting) —
+    see analytics/signals/engine.py::compute_signals for how each feeds in.
     """
-    closes = await _get_closes(symbol, days)
+    bars, weekly_closes, market_regime = await asyncio.gather(
+        _get_bars_ohlcv(symbol, days),
+        _get_closes(symbol, days=730, timespan="week"),
+        get_market_regime(),
+    )
+    closes = bars["closes"]
     if len(closes) < 30:
         return {"error": "insufficient price history", "symbol": symbol, "n": len(closes)}
-    return compute_signals(closes, symbol.upper())
+    return compute_signals(
+        closes, symbol.upper(),
+        highs=bars["highs"], lows=bars["lows"], volumes=bars["volumes"],
+        weekly_prices=weekly_closes,
+        market_regime=(market_regime or {}).get("macro"),
+    )
 
 
 @router.get("/beta/{symbol}")
@@ -214,17 +255,21 @@ async def backtest_custom(
     symbol: str,
     days:     int = Query(default=730),
     cost_bps: float = Query(default=1.0),
+    spread_bps:   float = Query(default=2.0),
+    slippage_bps: float = Query(default=3.0),
+    impact_coef:  float = Query(default=8.0),
     rules: dict = Body(...),
 ):
     """
     POST /quant/backtest/AAPL/custom — Build-your-own-algo backtest.
     Body: {"entry": [{indicator, op, value, param}], "exit": [...]}
     """
-    closes = await _get_closes(symbol, days, "day")
+    closes, dates = await _get_closes_and_dates(symbol, days, "day")
     if len(closes) < 60:
         return {"error": "need >= 60 price points", "symbol": symbol, "n": len(closes)}
     result = run_custom(closes, rules.get("entry", []), rules.get("exit", []),
-                        cost_bps=cost_bps)
+                        cost_bps=cost_bps, dates=dates,
+                        spread_bps=spread_bps, slippage_bps=slippage_bps, impact_coef=impact_coef)
     result["symbol"] = symbol.upper()
     return result
 
@@ -236,18 +281,39 @@ async def backtest(
     days:      int   = Query(default=365),
     cost_bps:  float = Query(default=1.0),
     timespan:  str   = Query(default="day"),
+    spread_bps:   float = Query(default=2.0),
+    slippage_bps: float = Query(default=3.0),
+    impact_coef:  float = Query(default=8.0),
+    benchmark: str = Query(default="SPY"),
 ):
     """
     GET /quant/backtest/AAPL?strategy=momentum&days=730&cost_bps=2
-    Runs a strategy backtest and returns equity curve + full performance stats.
+    Runs a strategy backtest and returns equity curve + full performance stats,
+    a real transaction-cost model (commission + spread + slippage + size-scaled
+    market impact — see analytics/backtest/strategies.py::_simulate_with_costs),
+    and a buy-and-hold benchmark curve aligned to the same dates for context.
     """
     ppy = 252.0 if timespan == "day" else 252.0 * 390  # rough for minute bars
-    closes = await _get_closes(symbol, days, timespan)
+    closes, dates = await _get_closes_and_dates(symbol, days, timespan)
     if len(closes) < 60:
         return {"error": "need >= 60 price points", "symbol": symbol, "n": len(closes)}
 
-    result = run_strategy(strategy, closes, cost_bps=cost_bps, ppy=ppy)
+    result = run_strategy(strategy, closes, cost_bps=cost_bps, ppy=ppy, dates=dates,
+                          spread_bps=spread_bps, slippage_bps=slippage_bps, impact_coef=impact_coef)
     result["symbol"] = symbol.upper()
+
+    if "error" not in result and benchmark:
+        bench_closes, bench_dates = await _get_closes_and_dates(benchmark, days, timespan)
+        if len(bench_closes) >= 2:
+            # Align to the strategy's own date range (start of overlapping history)
+            bench_by_date = dict(zip(bench_dates, bench_closes))
+            aligned = [bench_by_date.get(d) for d in dates]
+            base = next((v for v in aligned if v is not None), None)
+            if base:
+                result["benchmark"] = {
+                    "symbol": benchmark.upper(),
+                    "equity_curve": [round(v / base, 5) if v is not None else None for v in aligned],
+                }
     return result
 
 

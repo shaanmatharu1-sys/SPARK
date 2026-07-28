@@ -21,6 +21,15 @@ async def _closes(symbol: str, days: int) -> tuple[str, list[float]]:
     return symbol.upper(), [b["c"] for b in bars if b.get("c") is not None]
 
 
+async def _closes_with_dates(symbol: str, days: int) -> tuple[str, list[float], list[int]]:
+    today = datetime.date.today().isoformat()
+    start = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    bars = await fetch_agg_bars(symbol.upper(), 1, "day", start, today, limit=5000)
+    closes = [b["c"] for b in bars if b.get("c") is not None]
+    times  = [b["t"] for b in bars if b.get("c") is not None]
+    return symbol.upper(), closes, times
+
+
 async def _load_universe(symbols: list[str], days: int) -> dict:
     results = await asyncio.gather(*[_closes(s, days) for s in symbols],
                                    return_exceptions=True)
@@ -49,10 +58,17 @@ async def get_pairs(
 @router.get("/pairs/{sym_y}/{sym_x}")
 async def get_pair_detail(sym_y: str, sym_x: str, days: int = Query(default=400)):
     """Detailed cointegration analysis of one pair, with spread series."""
-    (_, y), (_, x) = await asyncio.gather(_closes(sym_y, days), _closes(sym_x, days))
+    (_, y, y_times), (_, x, _) = await asyncio.gather(
+        _closes_with_dates(sym_y, days), _closes_with_dates(sym_x, days)
+    )
     if len(y) < 60 or len(x) < 60:
         return {"error": "insufficient data"}
-    return analyze_pair(y, x, sym_y.upper(), sym_x.upper())
+    result = analyze_pair(y, x, sym_y.upper(), sym_x.upper())
+    # Dates aligned to the spread/zscore series, which analyze_pair trims to
+    # the shorter of the two inputs' tails — mirror that same trim here.
+    n = min(len(y), len(x))
+    result["dates"] = y_times[-n:]
+    return result
 
 
 @router.get("/correlation")

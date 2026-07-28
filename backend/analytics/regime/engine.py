@@ -37,6 +37,15 @@ from config import SECTOR_ETFS
 REGIME_CACHE_KEY = "regime:snapshot"
 REGIME_UNIVERSE = ["SPY", "QQQ", "IWM"] + list(SECTOR_ETFS)
 
+# Rolling history of regime snapshots — the single cached snapshot above is
+# overwritten every precompute, so a shift like "60% trending -> 20% trending
+# over two weeks" was previously invisible. Appending each precompute here
+# (same "compute once on the schedule, serve from cache" contract) lets the
+# frontend chart regime breadth / advance-decline / VIX over time instead of
+# only ever showing the latest instant.
+REGIME_HISTORY_KEY = "regime:history"
+MAX_HISTORY_POINTS = 720  # ~30 days at hourly cadence
+
 
 async def _closes_for(symbol: str, days: int = 365) -> list[float]:
     today = datetime.date.today().isoformat()
@@ -122,8 +131,25 @@ async def precompute_market_regime():
         },
     }
     await cache_set(REGIME_CACHE_KEY, payload, ttl=3600)
+    await _append_history(payload)
     logger.info(f"[Regime] Precomputed market regime across {len(per_symbol)} symbols")
     return payload
+
+
+async def _append_history(payload: dict):
+    history = await cache_get(REGIME_HISTORY_KEY) or []
+    mb = payload.get("market_breadth") or {}
+    history.append({
+        "computed_at":             payload["computed_at"],
+        "regime_breadth_pct":      payload["regime_breadth_pct"],
+        "advance_decline_ratio":   mb.get("advance_decline_ratio"),
+        "pct_positive_20d_return": mb.get("pct_positive_20d_return"),
+        "advancers":               mb.get("advancers"),
+        "decliners":               mb.get("decliners"),
+        "vix":                     payload.get("macro", {}).get("vix"),
+    })
+    history = history[-MAX_HISTORY_POINTS:]
+    await cache_set(REGIME_HISTORY_KEY, history, ttl=86400 * 30)
 
 
 async def get_market_regime():
@@ -132,3 +158,8 @@ async def get_market_regime():
     if cached:
         return cached
     return await precompute_market_regime()
+
+
+async def get_regime_history() -> list[dict]:
+    """Rolling history of regime snapshots for time-series charting."""
+    return await cache_get(REGIME_HISTORY_KEY) or []

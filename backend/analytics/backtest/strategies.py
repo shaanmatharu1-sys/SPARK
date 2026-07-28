@@ -99,8 +99,61 @@ STRATEGY_META = {
 }
 
 
+def _simulate_with_costs(prices: list[float], positions: list[float],
+                         commission_bps: float = 1.0, spread_bps: float = 2.0,
+                         slippage_bps: float = 3.0, impact_coef: float = 8.0):
+    """
+    Realistic per-trade transaction cost, replacing the old flat cost_bps=1.0
+    passed straight to the C++ engine: fixed commission + half the bid-ask
+    spread crossed on every trade + fixed slippage + a market-impact term
+    that scales with trade size (impact_coef bps per unit of turnover) — a
+    simple proxy for "bigger trades move the market more" since we don't
+    have order-book depth data to model impact more precisely.
+    """
+    n = min(len(prices), len(positions))
+    equity = [1.0]
+    strat_rets = []
+    prev_pos = 0.0
+    eq = 1.0
+    total_cost_bps_paid = 0.0
+    for t in range(1, n):
+        pos = positions[t - 1]
+        gross = pos * (prices[t] / prices[t - 1] - 1.0)
+        turnover = abs(pos - prev_pos)
+        cost_bps_eff = commission_bps + spread_bps / 2.0 + slippage_bps + impact_coef * turnover
+        cost = turnover * (cost_bps_eff / 10000.0)
+        net = gross - cost
+        total_cost_bps_paid += cost_bps_eff * turnover
+        prev_pos = pos
+        eq *= (1.0 + net)
+        equity.append(eq)
+        strat_rets.append(net)
+    return equity, strat_rets, total_cost_bps_paid
+
+
+def _drawdown_series(equity: list[float]) -> list[float]:
+    dd, peak = [], -float("inf")
+    for e in equity:
+        peak = max(peak, e)
+        dd.append(e / peak - 1.0 if peak > 0 else 0.0)
+    return dd
+
+
+def _rolling_sharpe(returns: list[float], ppy: float = 252.0, window: int = 60) -> list[float | None]:
+    n = len(returns)
+    out: list[float | None] = [None] * n
+    for i in range(window - 1, n):
+        w = returns[i - window + 1:i + 1]
+        m = sum(w) / window
+        sd = (sum((x - m) ** 2 for x in w) / window) ** 0.5
+        out[i] = (m / sd) * (ppy ** 0.5) if sd > 0 else None
+    return out
+
+
 def run_strategy(name: str, prices: list[float], cost_bps: float = 1.0,
-                 ppy: float = 252.0, **params) -> dict:
+                 ppy: float = 252.0, dates: list[int] = None,
+                 spread_bps: float = 2.0, slippage_bps: float = 3.0,
+                 impact_coef: float = 8.0, **params) -> dict:
     """Run a named strategy and return equity curve + stats."""
     if not HAS_QUANT:
         return {"error": "quant_module not compiled"}
@@ -112,17 +165,31 @@ def run_strategy(name: str, prices: list[float], cost_bps: float = 1.0,
     prices = [float(p) for p in prices if p is not None]
     positions = STRATEGIES[name](prices, **params)
 
-    bt = q.backtest_signal(prices, positions, cost_bps=cost_bps, ppy=ppy)
+    equity, strat_rets, total_cost_bps_paid = _simulate_with_costs(
+        prices, positions, commission_bps=cost_bps, spread_bps=spread_bps,
+        slippage_bps=slippage_bps, impact_coef=impact_coef,
+    )
+    total_turnover = sum(abs(positions[i] - positions[i - 1]) for i in range(1, len(positions)))
 
-    return {
+    result = {
         "strategy":      name,
         "n_periods":     len(prices),
-        "equity_curve":  [round(e, 5) for e in bt.equity_curve],
-        "strategy_returns": [round(r, 6) for r in bt.strategy_returns],
-        "total_turnover": round(bt.total_turnover, 2),
-        "stats":         bt.stats.to_dict(),
+        "equity_curve":  [round(e, 5) for e in equity],
+        "drawdown":      [round(d, 5) for d in _drawdown_series(equity)],
+        "strategy_returns": [round(r, 6) for r in strat_rets],
+        "rolling_sharpe":   [round(s, 3) if s is not None else None for s in _rolling_sharpe(strat_rets, ppy)],
+        "total_turnover": round(total_turnover, 2),
+        "total_cost_bps_paid": round(total_cost_bps_paid, 2),
+        "cost_model": {
+            "commission_bps": cost_bps, "spread_bps": spread_bps,
+            "slippage_bps": slippage_bps, "impact_coef": impact_coef,
+        },
+        "stats":         q.perf_stats(strat_rets, 0.0, ppy).to_dict(),
         "positions":     [round(p, 3) for p in positions],
     }
+    if dates:
+        result["dates"] = dates[:len(equity)]
+    return result
 
 
 # ════════════════════════════════════════════════════════════════
@@ -188,22 +255,40 @@ def custom_strategy(prices, entry_rules, exit_rules):
         positions[i] = pos
     return positions
 
-def run_custom(prices, entry_rules, exit_rules, cost_bps=1.0, ppy=252.0):
+def run_custom(prices, entry_rules, exit_rules, cost_bps=1.0, ppy=252.0, dates=None,
+               spread_bps=2.0, slippage_bps=3.0, impact_coef=8.0):
     if not HAS_QUANT:
         return {"error": "quant_module not compiled"}
     prices = [float(p) for p in prices if p is not None]
     if len(prices) < 60:
         return {"error": "need >= 60 price points"}
     positions = custom_strategy(prices, entry_rules, exit_rules)
-    bt = q.backtest_signal(prices, positions, cost_bps=cost_bps, ppy=ppy)
-    return {
+
+    equity, strat_rets, total_cost_bps_paid = _simulate_with_costs(
+        prices, positions, commission_bps=cost_bps, spread_bps=spread_bps,
+        slippage_bps=slippage_bps, impact_coef=impact_coef,
+    )
+    total_turnover = sum(abs(positions[i] - positions[i - 1]) for i in range(1, len(positions)))
+
+    result = {
         "strategy": "custom",
         "n_periods": len(prices),
-        "equity_curve": [round(e, 5) for e in bt.equity_curve],
-        "total_turnover": round(bt.total_turnover, 2),
-        "stats": bt.stats.to_dict(),
+        "equity_curve": [round(e, 5) for e in equity],
+        "drawdown": [round(d, 5) for d in _drawdown_series(equity)],
+        "strategy_returns": [round(r, 6) for r in strat_rets],
+        "rolling_sharpe": [round(s, 3) if s is not None else None for s in _rolling_sharpe(strat_rets, ppy)],
+        "total_turnover": round(total_turnover, 2),
+        "total_cost_bps_paid": round(total_cost_bps_paid, 2),
+        "cost_model": {
+            "commission_bps": cost_bps, "spread_bps": spread_bps,
+            "slippage_bps": slippage_bps, "impact_coef": impact_coef,
+        },
+        "stats": q.perf_stats(strat_rets, 0.0, ppy).to_dict(),
         "positions": [round(p, 1) for p in positions],
     }
+    if dates:
+        result["dates"] = dates[:len(equity)]
+    return result
 
 INDICATOR_META = {
     "rsi":          {"name": "RSI", "default_param": 14, "range": "0-100", "param_label": "period"},

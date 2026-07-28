@@ -1,25 +1,58 @@
 import React, { useState } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import {
+  LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts'
 import { useAlgoList, useAlgoTemplates, useIndicators, algoApi, runCustomBacktest } from '../../hooks/useMarketData'
 import { RuleEditor } from '../Backtest/BacktestTab'
 
+function computeDrawdownPct(values) {
+  let peak = -Infinity
+  return values.map(v => {
+    peak = Math.max(peak, v)
+    return peak > 0 ? (v / peak - 1) * 100 : 0
+  })
+}
+
+// points: [{ t?: unix-seconds, equity: number }]. Falls back to an
+// unlabeled index axis (via recharts' implicit index) when no real
+// timestamp is available (e.g. a symbol-only backtest preview) rather
+// than misleadingly formatting an index as a date.
 function EquityChart({ points, dataKey = 'equity', color = 'var(--gold)', height = 140 }) {
   if (!points || points.length < 2) {
     return <div className="dim" style={{ fontSize: 10, padding: '20px 0', textAlign: 'center' }}>
       Not enough history yet — run it a few times to build the curve.
     </div>
   }
+  const hasDates = points[0].t != null
+  const dd = computeDrawdownPct(points.map(p => p[dataKey]))
+  const data = points.map((p, i) => ({ ...p, dd: dd[i] }))
+  const fmtX = (v) => hasDates ? new Date(v * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
   return (
-    <div style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={points}>
-          <CartesianGrid stroke="var(--border)" strokeDasharray="2 2" />
-          <XAxis dataKey="i" stroke="var(--text-dim)" fontSize={9} tick={false} />
-          <YAxis stroke="var(--text-dim)" fontSize={9} domain={['auto', 'auto']} width={56} />
-          <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)', fontSize: 11 }} />
-          <Line type="monotone" dataKey={dataKey} stroke={color} dot={false} strokeWidth={1.5} />
-        </LineChart>
-      </ResponsiveContainer>
+    <div>
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data}>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="2 2" />
+            <XAxis dataKey={hasDates ? 't' : undefined} tickFormatter={hasDates ? fmtX : undefined}
+                   stroke="var(--text-dim)" fontSize={9} tick={hasDates} minTickGap={40} />
+            <YAxis stroke="var(--text-dim)" fontSize={9} domain={['auto', 'auto']} width={56} />
+            <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)', fontSize: 11 }}
+                     labelFormatter={hasDates ? fmtX : undefined} />
+            <Line type="monotone" dataKey={dataKey} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{ height: 36, marginTop: 2 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data}>
+            <XAxis dataKey={hasDates ? 't' : undefined} hide />
+            <YAxis hide domain={['auto', 0]} />
+            <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)', fontSize: 10 }}
+                     formatter={(v) => [`${v.toFixed(2)}%`, 'Drawdown']} labelFormatter={hasDates ? fmtX : undefined} />
+            <Area type="monotone" dataKey="dd" stroke="var(--red)" fill="var(--red)" fillOpacity={0.25} strokeWidth={1} isAnimationActive={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   )
 }
@@ -76,7 +109,7 @@ function AlgoCard({ algo, onRun, onReset, onDelete, busy }) {
 
           <div style={{ marginBottom: 10 }}>
             <div className="label" style={{ marginBottom: 4 }}>Equity Curve</div>
-            <EquityChart points={pf.equity_history?.map((p, i) => ({ i, equity: p.equity }))} />
+            <EquityChart points={pf.equity_history?.map(p => ({ t: p.ts, equity: p.equity }))} />
           </div>
 
           {pf.positions?.length > 0 && (

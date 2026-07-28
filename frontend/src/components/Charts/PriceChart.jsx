@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createChartEngine } from '../../lib/canvasChart'
 import { useBars } from '../../hooks/useMarketData'
 import { useWebSocket } from '../../hooks/useWebSocket'
-import { sma, ema, rsi, macd, bollingerBands } from '../../lib/indicators'
+import { sma, ema, rsi, macd, bollingerBands, vwap, atr } from '../../lib/indicators'
 import { useDrawingTools } from './ChartDrawingLayer'
 
 const TIMESPANS = [
@@ -10,7 +10,13 @@ const TIMESPANS = [
   { label: '5m',  multiplier: 5,  timespan: 'minute', limit: 390 },
   { label: '30m', multiplier: 30, timespan: 'minute', limit: 390 },
   { label: '1D',  multiplier: 1,  timespan: 'minute', limit: 390 },
-  { label: '1W',  multiplier: 5,  timespan: 'minute', limit: 390 },
+  // 5-min bars capped at limit=390 (same as 1D) only spans ~2 trading days once
+  // extended-hours bars are included — bound this by an explicit 7-calendar-day
+  // getFromDate (like YTD/All below) instead of relying on limit x bar-size math,
+  // and raise the limit so a full week of 5-min bars (even 24h-inclusive) fits.
+  { label: '1W',  multiplier: 5,  timespan: 'minute', limit: 1000, getFromDate: () => {
+      const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10)
+    } },
   { label: '1M',  multiplier: 1,  timespan: 'day',    limit: 30 },
   { label: '3M',  multiplier: 1,  timespan: 'day',    limit: 65 },
   { label: 'YTD', multiplier: 1,  timespan: 'day',    limit: 366, getFromDate: () => `${new Date().getFullYear()}-01-01` },
@@ -25,8 +31,10 @@ const INDICATORS = [
   { key: 'sma',    label: 'SMA 20' },
   { key: 'ema',    label: 'EMA 20' },
   { key: 'bbands', label: 'BB 20' },
+  { key: 'vwap',   label: 'VWAP' },
   { key: 'rsi',    label: 'RSI 14' },
   { key: 'macd',   label: 'MACD' },
+  { key: 'atr',    label: 'ATR 14' },
 ]
 
 const CHART_TYPES = [
@@ -74,6 +82,7 @@ export default function PriceChart({ symbol = 'SPY', initialTimeframe }) {
   const lastBarTime   = useRef(null)
   const closesRef     = useRef([])
   const timesRef      = useRef([])
+  const barsRef       = useRef([]) // full OHLCV, needed by volume-aware indicators (VWAP/ATR)
 
   const [ts, setTs] = useState(() => TIMESPANS.find(t => t.label === initialTimeframe) || DEFAULT_TIMESPAN)
   const [mode, setMode] = useState('candle')
@@ -113,6 +122,9 @@ export default function PriceChart({ symbol = 'SPY', initialTimeframe }) {
       overlays.push({ color: '#9B8Bd4', points: zip(times, bb.upper) }) // var(--purple)
       overlays.push({ color: '#9B8Bd4', points: zip(times, bb.lower) }) // var(--purple)
     }
+    if (activeIndicators.vwap) {
+      overlays.push({ color: '#5BB8C4', points: zip(times, vwap(barsRef.current)) }) // var(--cyan)
+    }
     engine.setOverlays(overlays)
 
     const subPanes = []
@@ -133,6 +145,12 @@ export default function PriceChart({ symbol = 'SPY', initialTimeframe }) {
         ],
       })
     }
+    if (activeIndicators.atr) {
+      subPanes.push({
+        label: 'ATR 14',
+        series: [{ type: 'line', color: '#E0556B', points: zip(times, atr(barsRef.current, 14)) }], // var(--red)
+      })
+    }
     engine.setSubPanes(subPanes)
   }, [activeIndicators])
 
@@ -145,9 +163,14 @@ export default function PriceChart({ symbol = 'SPY', initialTimeframe }) {
     lastBarTime.current = time
     engine.updateLastBar({ t: time, o: msg.open, h: msg.high, l: msg.low, c: msg.close, v: msg.volume })
 
-    const closes = closesRef.current, times = timesRef.current
-    if (times.length && times[times.length - 1] === time) closes[closes.length - 1] = msg.close
-    else { closes.push(msg.close); times.push(time) }
+    const closes = closesRef.current, times = timesRef.current, liveBars = barsRef.current
+    const bar = { t: time, o: msg.open, h: msg.high, l: msg.low, c: msg.close, v: msg.volume }
+    if (times.length && times[times.length - 1] === time) {
+      closes[closes.length - 1] = msg.close
+      liveBars[liveBars.length - 1] = bar
+    } else {
+      closes.push(msg.close); times.push(time); liveBars.push(bar)
+    }
     rebuildIndicators()
   }, [symbol, rebuildIndicators])
 
@@ -174,6 +197,7 @@ export default function PriceChart({ symbol = 'SPY', initialTimeframe }) {
     lastBarTime.current = engineBars.length ? engineBars[engineBars.length - 1].t : null
     closesRef.current = engineBars.map(b => b.c)
     timesRef.current  = engineBars.map(b => b.t)
+    barsRef.current   = engineBars
     rebuildIndicators()
   }, [bars])
 

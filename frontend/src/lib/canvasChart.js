@@ -304,6 +304,19 @@ export function createChartEngine(canvas, colors) {
     const pad = (max - min) * 0.1
     const range = { min: min - pad, max: max + pad }
     drawLine(ctx, pane, range, cmp.points, cmp.color)
+
+    // Compare series is on its own independent % scale, distinct from the
+    // main price axis in the right gutter — label it so that scale isn't
+    // silently unmarked (three ticks: top/mid/bottom of its own range).
+    ctx.font = '9px IBM Plex Mono, monospace'
+    ctx.fillStyle = cmp.color
+    const usableH = usableHeightFor(pane)
+    for (const frac of [0, 0.5, 1]) {
+      const y = pane.top + frac * usableH
+      const v = range.max - frac * (range.max - range.min)
+      const label = `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`
+      ctx.fillText(label, plotW - ctx.measureText(label).width - 4, y - 2)
+    }
   }
 
   function drawSubPane(ctx, pane, spec, lo, hi) {

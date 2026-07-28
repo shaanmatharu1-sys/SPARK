@@ -81,9 +81,42 @@ def _rsi_np(series, n=14):
     return np.array(_rsi(list(series), int(n)), dtype=float)
 
 
+def _bb_upper(series, n=20, num_std=2):
+    n = int(n)
+    mid = _sma_np(series, n)
+    out = np.full(len(series), np.nan)
+    for i in range(n - 1, len(series)):
+        out[i] = mid[i] + num_std * series[i - n + 1:i + 1].std()
+    return out
+
+
+def _bb_lower(series, n=20, num_std=2):
+    n = int(n)
+    mid = _sma_np(series, n)
+    out = np.full(len(series), np.nan)
+    for i in range(n - 1, len(series)):
+        out[i] = mid[i] - num_std * series[i - n + 1:i + 1].std()
+    return out
+
+
+def _macd_line(series, fast=12, slow=26):
+    return _ema_np(series, fast) - _ema_np(series, slow)
+
+
+def _macd_signal(series, fast=12, slow=26, signal=9):
+    macd_line = _macd_line(series, fast, slow)
+    first_valid = np.argmax(~np.isnan(macd_line)) if np.any(~np.isnan(macd_line)) else len(macd_line)
+    out = np.full(len(series), np.nan)
+    tail = _ema_np(macd_line[first_valid:], signal)
+    out[first_valid:first_valid + len(tail)] = tail
+    return out
+
+
 FUNCTIONS = {
     "SMA": _sma_np, "EMA": _ema_np, "RSI": _rsi_np,
     "ROC": _roc, "ZSCORE": _zscore, "STD": _std, "CORR": _corr,
+    "BBUPPER": _bb_upper, "BBLOWER": _bb_lower,
+    "MACDLINE": _macd_line, "MACDSIGNAL": _macd_signal,
 }
 
 _ALLOWED_BINOPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)

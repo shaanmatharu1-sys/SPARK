@@ -78,3 +78,43 @@ export function bollingerBands(prices, window = 20, numStd = 2) {
   }
   return { upper, mid, lower }
 }
+
+// Volume-weighted average price, reset at the start of each local calendar
+// day — the standard intraday reference level. bars: [{t, h, l, c, v}].
+export function vwap(bars) {
+  const out = new Array(bars.length).fill(NaN)
+  let cumPV = 0, cumV = 0, lastDay = null
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i]
+    const day = new Date(b.t * 1000).toDateString()
+    if (day !== lastDay) { cumPV = 0; cumV = 0; lastDay = day }
+    const typical = (b.h + b.l + b.c) / 3
+    const vol = b.v || 0
+    cumPV += typical * vol
+    cumV += vol
+    out[i] = cumV > 0 ? cumPV / cumV : NaN
+  }
+  return out
+}
+
+// Average True Range (Wilder's smoothing) — used for stop-loss sizing and
+// breakout confirmation. bars: [{t, h, l, c}].
+export function atr(bars, window = 14) {
+  const n = bars.length
+  const out = new Array(n).fill(NaN)
+  if (n < window + 1) return out
+  const tr = new Array(n).fill(NaN)
+  for (let i = 0; i < n; i++) {
+    const b = bars[i]
+    tr[i] = i === 0 ? b.h - b.l : Math.max(
+      b.h - b.l,
+      Math.abs(b.h - bars[i - 1].c),
+      Math.abs(b.l - bars[i - 1].c),
+    )
+  }
+  let seed = 0
+  for (let i = 1; i <= window; i++) seed += tr[i]
+  out[window] = seed / window
+  for (let i = window + 1; i < n; i++) out[i] = (out[i - 1] * (window - 1) + tr[i]) / window
+  return out
+}

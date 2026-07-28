@@ -89,7 +89,9 @@ export default function Signals() {
 
             {data.momentum && (
               <div style={{ marginTop: 10 }}>
-                <div className="dim" style={{ fontSize: 9, marginBottom: 4 }}>MOMENTUM (RISK-ADJ)</div>
+                <div className="dim" style={{ fontSize: 9, marginBottom: 4 }}>
+                  MOMENTUM (RISK-ADJ) — all three lookbacks feed the composite
+                </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {Object.entries(data.momentum).map(([lb, m]) => (
                     <div key={lb} style={{ flex: 1, textAlign: 'center', background: 'var(--bg-base)',
@@ -104,6 +106,25 @@ export default function Signals() {
                 </div>
               </div>
             )}
+
+            <div style={{ marginTop: 12 }}>
+              <div className="dim" style={{ fontSize: 9, marginBottom: 4 }}>TREND / VOLUME / CONFIRMATION</div>
+              <Row label="ADX (14) — trend strength" value={data.adx_14?.toFixed(1) ?? '—'}
+                   color={data.adx_14 > 25 ? 'var(--green)' : null} />
+              <Row label="Volume vs 20d avg" value={data.volume_ratio_20d != null ? `${data.volume_ratio_20d}×` : '—'}
+                   color={data.volume_ratio_20d > 1.5 ? 'var(--gold)' : data.volume_ratio_20d < 0.5 ? 'var(--text-dim)' : null} />
+              <Row label="Weekly trend aligned" value={
+                data.weekly_momentum_aligned == null ? '—' : data.weekly_momentum_aligned ? 'YES' : 'NO — dampened'
+              } color={data.weekly_momentum_aligned === false ? 'var(--red)' : data.weekly_momentum_aligned ? 'var(--green)' : null} />
+              <Row label="RSI divergence" value={data.rsi_divergence || 'none'}
+                   color={data.rsi_divergence === 'bullish' ? 'var(--green)' : data.rsi_divergence === 'bearish' ? 'var(--red)' : null} />
+              <Row label="ATR (14)" value={data.atr_14 != null ? `$${data.atr_14.toFixed(2)}` : '—'} />
+              <Row label="Dist. to support / resistance" value={
+                data.dist_to_support_atr != null
+                  ? `${data.dist_to_support_atr} / ${data.dist_to_resistance_atr} ATR`
+                  : '—'
+              } />
+            </div>
           </>
         )}
       </div>

@@ -68,6 +68,75 @@ def macd(prices: list[float], fast: int = 12, slow: int = 26, signal: int = 9) -
     return {"macd": macd_line, "signal": signal_line, "histogram": histogram}
 
 
+def atr(highs: list[float], lows: list[float], closes: list[float], window: int = 14) -> list[float]:
+    """Average True Range (Wilder's smoothing) from OHLC."""
+    n = len(closes)
+    out = [float('nan')] * n
+    if n < window + 1:
+        return out
+    tr = [0.0] * n
+    for i in range(n):
+        tr[i] = (highs[i] - lows[i]) if i == 0 else max(
+            highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])
+        )
+    seed = sum(tr[1:window + 1]) / window
+    out[window] = seed
+    prev = seed
+    for i in range(window + 1, n):
+        prev = (prev * (window - 1) + tr[i]) / window
+        out[i] = prev
+    return out
+
+
+def adx(highs: list[float], lows: list[float], closes: list[float], window: int = 14) -> list[float]:
+    """Average Directional Index (Wilder) — trend-strength, independent of direction."""
+    n = len(closes)
+    out = [float('nan')] * n
+    if n < 2 * window + 1:
+        return out
+
+    tr = [0.0] * n
+    plus_dm = [0.0] * n
+    minus_dm = [0.0] * n
+    for i in range(1, n):
+        up, down = highs[i] - highs[i - 1], lows[i - 1] - lows[i]
+        plus_dm[i] = up if (up > down and up > 0) else 0.0
+        minus_dm[i] = down if (down > up and down > 0) else 0.0
+        tr[i] = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+
+    def _wilder_smooth(series):
+        sm = [float('nan')] * n
+        seed = sum(series[1:window + 1])
+        sm[window] = seed
+        prev = seed
+        for i in range(window + 1, n):
+            prev = prev - (prev / window) + series[i]
+            sm[i] = prev
+        return sm
+
+    tr_s, pdm_s, mdm_s = _wilder_smooth(tr), _wilder_smooth(plus_dm), _wilder_smooth(minus_dm)
+
+    dx = [float('nan')] * n
+    for i in range(window, n):
+        if tr_s[i] and tr_s[i] > 0:
+            pdi, mdi = 100 * pdm_s[i] / tr_s[i], 100 * mdm_s[i] / tr_s[i]
+            denom = pdi + mdi
+            dx[i] = 100 * abs(pdi - mdi) / denom if denom > 0 else 0.0
+
+    dx_window = dx[window:window + window]
+    if len(dx_window) < window or any(d != d for d in dx_window):
+        return out
+    adx_seed = sum(dx_window) / window
+    idx0 = window + window - 1
+    out[idx0] = adx_seed
+    prev = adx_seed
+    for i in range(idx0 + 1, n):
+        if dx[i] == dx[i]:
+            prev = (prev * (window - 1) + dx[i]) / window
+            out[i] = prev
+    return out
+
+
 def bollinger_bands(prices: list[float], window: int = 20, num_std: float = 2.0) -> dict:
     mid = sma(prices, window)
     upper = [float('nan')] * len(prices)
