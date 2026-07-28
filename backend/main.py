@@ -18,7 +18,7 @@ from config import CORS_ORIGINS, DEFAULT_WATCHLIST, SECTOR_ETFS
 from cache.redis_client import ping as redis_ping
 
 # ── Routers ──────────────────────────────────────────────────────────────────
-from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata, fundamentals, futures, workspace, alerts, regime, auth as auth_router
+from routers import quotes, options, macro, news, sectors, sentiment, unusual_activity, quant, factors, vol, algo, research, markets, watchlist, traders, research_ext, international, altdata, fundamentals, futures, workspace, alerts, regime, auth as auth_router, weather, orderbook
 
 # ── Background WS feeds ──────────────────────────────────────────────────────
 # Stocks: Finnhub free-tier WS (real-time, no paid entitlement needed).
@@ -30,6 +30,10 @@ from services.finnhub_ws_client import FinnhubStocksWS
 # genuinely live 24/7 even when equities/options are closed. (Binance's public
 # WS was tried first but returns HTTP 451 — geo-blocked from US hosts.)
 from services.coinbase_ws_client import CoinbaseCryptoWS
+# Order book: separate Coinbase WS connection subscribed to the `level2` full-
+# depth channel — independent of the ticker-only feed above so a bug here
+# can't take down the existing live crypto price feed.
+from services.orderbook_client import CoinbaseOrderBookWS
 
 # ── Scheduled refreshes ──────────────────────────────────────────────────────
 from services.fred_client    import fetch_macro_dashboard, fetch_yield_curve
@@ -52,6 +56,7 @@ logger = logging.getLogger(__name__)
 stocks_ws  = FinnhubStocksWS(symbols=DEFAULT_WATCHLIST + SECTOR_ETFS)
 options_ws = PolygonOptionsWS(symbols=DEFAULT_WATCHLIST)
 crypto_ws  = CoinbaseCryptoWS()
+orderbook_ws = CoinbaseOrderBookWS()
 
 # ── Scheduler ────────────────────────────────────────────────────────────────
 scheduler = AsyncIOScheduler()
@@ -178,7 +183,8 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(stocks_ws.start(),  name="finnhub_stocks_ws")
     asyncio.create_task(options_ws.start(), name="polygon_options_ws")
     asyncio.create_task(crypto_ws.start(),  name="coinbase_crypto_ws")
-    logger.info("[WS Feeds] Finnhub stocks + Polygon options + Coinbase crypto starting...")
+    asyncio.create_task(orderbook_ws.start(), name="coinbase_orderbook_ws")
+    logger.info("[WS Feeds] Finnhub stocks + Polygon options + Coinbase crypto + Coinbase order book starting...")
 
     # Start vessel-tracking feed (AISstream) if configured
     from services import vessel_client
@@ -201,6 +207,7 @@ async def lifespan(app: FastAPI):
     await stocks_ws.stop()
     await options_ws.stop()
     await crypto_ws.stop()
+    await orderbook_ws.stop()
     scheduler.shutdown(wait=False)
     logger.info("[Shutdown] Clean exit")
 
@@ -246,6 +253,8 @@ app.include_router(workspace.router)
 app.include_router(alerts.router)
 app.include_router(regime.router)
 app.include_router(auth_router.router)
+app.include_router(weather.router)
+app.include_router(orderbook.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -264,6 +273,7 @@ async def health():
             "stocks_ws":  stocks_ws.health(),
             "options_ws": options_ws.health(),
             "crypto_ws":  crypto_ws.health(),
+            "orderbook_ws": orderbook_ws.health(),
         },
     }
 

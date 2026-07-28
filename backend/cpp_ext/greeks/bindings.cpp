@@ -38,8 +38,9 @@ PYBIND11_MODULE(greeks_module, m) {
         py::arg("r"),
         py::arg("sigma"),
         py::arg("is_call") = true,
+        py::arg("q") = 0.0,
         R"pbdoc(
-            Compute Black-Scholes price and all Greeks.
+            Compute Black-Scholes/Merton price and all Greeks.
 
             Parameters
             ----------
@@ -49,6 +50,7 @@ PYBIND11_MODULE(greeks_module, m) {
             r       : float  — risk-free rate (e.g. 0.05)
             sigma   : float  — volatility (e.g. 0.25)
             is_call : bool   — True for call, False for put
+            q       : float  — continuous dividend yield (e.g. 0.015); 0.0 = plain BS
 
             Returns
             -------
@@ -67,6 +69,7 @@ PYBIND11_MODULE(greeks_module, m) {
         py::arg("is_call") = true,
         py::arg("max_iter") = 100,
         py::arg("tol") = 1e-6,
+        py::arg("q") = 0.0,
         R"pbdoc(
             Compute implied volatility via Newton-Raphson.
             Returns -1.0 if no convergence.
@@ -82,6 +85,7 @@ PYBIND11_MODULE(greeks_module, m) {
         py::arg("expirations"),
         py::arg("r"),
         py::arg("is_call") = true,
+        py::arg("q") = 0.0,
         R"pbdoc(
             Compute IV surface for a grid of strikes and expirations.
             market_prices : list[list[float]]  — [n_expirations][n_strikes]

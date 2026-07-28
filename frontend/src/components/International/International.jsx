@@ -1,12 +1,16 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  LineChart, Line,
 } from 'recharts'
 import { useInternational, useBars, useIndexBars } from '../../hooks/useMarketData'
 import { WORLD_LAND } from '../SupplyMap/worldGeo'
 import CountryDirectory from './CountryDirectory'
 import IMAPHeatmap from './IMAPHeatmap'
+import RawSeriesChart from '../Charts/RawSeriesChart'
+
+const EQUITY_RANGES = [
+  { label: '3M', days: 90 }, { label: '1Y', days: 365 }, { label: '5Y', days: 365 * 5 },
+]
 
 const chgColor = (p) => p == null ? 'var(--text-dim)' : p > 0 ? 'var(--green)' : p < 0 ? 'var(--red)' : 'var(--text)'
 const fmtPct = (p) => p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(2)}%`
@@ -159,34 +163,99 @@ function RegionalPerfBar({ etfs, onPick, selected }) {
   )
 }
 
-// Drill-down: 3-month daily price history for whichever country ETF is selected.
+// Drill-down: real interactive chart (zoom/pan/crosshair, SMA/EMA overlays —
+// the same canvas engine PriceChart/Futures use) for whichever country ETF
+// is selected, with a real range selector instead of a fixed 3-month window.
 function CountryDetail({ symbol, name }) {
-  const { data: bars, loading } = useBars(symbol, 1, 'day', 90)
-  const chartData = useMemo(() => (bars || []).map(b => ({
-    t: new Date(b.t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-    c: b.c,
+  const [range, setRange] = useState(EQUITY_RANGES[0])
+  const { data: bars, loading } = useBars(symbol, 1, 'day', range.days)
+  const chartBars = useMemo(() => (bars || []).map(b => ({
+    t: Math.floor(b.t / 1000), o: b.o, h: b.h, l: b.l, c: b.c, v: b.v,
   })), [bars])
 
   return (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gold-bright)', marginBottom: 4 }}>
-        {symbol} — {name} — 3M
+    <div style={{ marginBottom: 8, height: 220, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 2, flexShrink: 0 }}>
+        {EQUITY_RANGES.map(r => (
+          <button key={r.label} className={`btn ${range.label === r.label ? 'active' : ''}`}
+            style={{ fontSize: 9, padding: '2px 7px' }} onClick={() => setRange(r)}>
+            {r.label}
+          </button>
+        ))}
       </div>
-      <div style={{ height: 110 }}>
-        {loading ? <div className="dim" style={{ fontSize: 11 }}>Loading…</div> : (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="t" tick={{ fill: 'var(--text-dim)', fontSize: 7 }}
-                     axisLine={{ stroke: 'var(--border-bright)' }} interval={Math.ceil(chartData.length / 6)} />
-              <YAxis domain={['auto', 'auto']} tick={{ fill: 'var(--text-dim)', fontSize: 8 }}
-                     axisLine={{ stroke: 'var(--border-bright)' }} width={44} />
-              <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
-                       borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }} />
-              <Line type="monotone" dataKey="c" stroke="var(--steel-bright)" strokeWidth={1.5} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
+      <RawSeriesChart bars={chartBars} loading={loading} title={`${symbol} — ${name}`} />
+    </div>
+  )
+}
+
+// Full FX depth: every tracked pair, a cross-rate matrix among the majors,
+// and a real drill-down chart per pair (Frankfurter/ECB history via the
+// canvas chart engine) — "full insight into FX", not just an 8-row snapshot.
+function FxDepth({ fx, fxAvail, reason }) {
+  const [selected, setSelected] = useState('EUR')
+  const { data: hist, loading: histLoading } = useFxHistory(selected, 365)
+  const { data: matrix } = useFxMatrix()
+
+  const chartBars = useMemo(() => (hist?.bars || []), [hist])
+
+  return (
+    <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 6, minHeight: 0 }}>
+      <div className="panel" style={{ minHeight: 0 }}>
+        <div className="panel-header">
+          <span className="title">FX Pairs</span>
+          <span className="dim" style={{ fontSize: 9 }}>Frankfurter · ECB reference rates · click to chart</span>
+        </div>
+        <div className="panel-body" style={{ padding: '4px 12px', overflowY: 'auto' }}>
+          {!fxAvail && <div className="dim" style={{ fontSize: 11, padding: 8 }}>FX unavailable — {reason}.</div>}
+          {fx.map(f => (
+            <Row key={f.code} left={f.pair} sub={f.country}
+                 right={`${f.rate ?? '—'}  ${fmtPct(f.change_pct)}`} rightColor={chgColor(f.change_pct)}
+                 active={selected === f.code} onClick={() => setSelected(f.code)} />
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+        <div className="panel" style={{ minHeight: 0, flex: '1.3' }}>
+          <div className="panel-header"><span className="title">{selected}/USD — 1Y</span></div>
+          <div className="panel-body" style={{ padding: 8 }}>
+            <RawSeriesChart bars={chartBars} loading={histLoading} />
+          </div>
+        </div>
+
+        <div className="panel" style={{ minHeight: 0, flex: 1 }}>
+          <div className="panel-header"><span className="title">Cross-Rate Matrix</span></div>
+          <div className="panel-body" style={{ padding: 8, overflow: 'auto' }}>
+            {!matrix?.available ? (
+              <div className="dim" style={{ fontSize: 11 }}>Loading…</div>
+            ) : (
+              <table className="bbg-table" style={{ fontSize: 10 }}>
+                <thead>
+                  <tr>
+                    <th></th>
+                    {matrix.codes.map(c => <th key={c}>{c}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {matrix.matrix.map(row => (
+                    <tr key={row.base}>
+                      <td style={{ color: 'var(--gold-bright)', fontWeight: 600 }}>{row.base}</td>
+                      {matrix.codes.map(c => (
+                        <td key={c} style={{ fontFamily: 'var(--font-mono)',
+                                             color: c === row.base ? 'var(--text-dim)' : 'var(--text)' }}>
+                          {row[c] != null ? row[c].toFixed(4) : '—'}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div className="dim" style={{ fontSize: 9, marginTop: 6 }}>
+              Reads as: 1 unit of the row currency = this many units of the column currency.
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -256,8 +325,18 @@ export default function International() {
       <button className={`btn ${mode === 'overview' ? 'active' : ''}`} onClick={() => setMode('overview')}>Overview</button>
       <button className={`btn ${mode === 'directory' ? 'active' : ''}`} onClick={() => setMode('directory')}>Country Directory</button>
       <button className={`btn ${mode === 'heatmap' ? 'active' : ''}`} onClick={() => setMode('heatmap')}>Heatmap</button>
+      <button className={`btn ${mode === 'fx' ? 'active' : ''}`} onClick={() => setMode('fx')}>FX</button>
     </div>
   )
+
+  if (mode === 'fx') {
+    return (
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+        <ModeToggle />
+        <FxDepth fx={fx} fxAvail={fxAvail} reason={data?.fx?.reason} />
+      </div>
+    )
+  }
 
   if (mode === 'directory') {
     return (
@@ -334,12 +413,15 @@ export default function International() {
           <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gold-bright)', margin: '2px 0 4px' }}>FX</div>
           {!fxAvail ? (
             <div className="dim" style={{ fontSize: 10, padding: '4px 0 8px' }}>
-              FX unavailable — {data?.fx?.reason || 'not entitled on this data plan'}.
+              FX unavailable — {data?.fx?.reason || 'feed error'}.
             </div>
-          ) : fx.map(f => (
-            <Row key={f.symbol} left={f.pair}
+          ) : fx.slice(0, 8).map(f => (
+            <Row key={f.code} left={f.pair} sub={f.country}
                  right={`${f.rate ?? '—'}  ${fmtPct(f.change_pct)}`} rightColor={chgColor(f.change_pct)} />
           ))}
+          <div className="dim" style={{ fontSize: 9, margin: '4px 0 0' }}>
+            See the FX tab above for the full cross-rate matrix and per-pair charts.
+          </div>
           <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gold-bright)', margin: '8px 0 4px' }}>ADRs</div>
           {adrs.map(a => (
             <Row key={a.symbol} left={a.symbol} sub={a.country}

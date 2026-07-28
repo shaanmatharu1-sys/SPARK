@@ -244,6 +244,14 @@ export function useYieldCurveExtended() {
   return useFetch('/macro/yield-curve/extended', 3600_000)
 }
 
+// ── Global fixed income depth: sovereign 10Y yields + TIPS real yields ──
+export function useGlobalYields() {
+  return useFetch('/macro/global-yields', 3600_000)
+}
+export function useRealYields() {
+  return useFetch('/macro/real-yields', 3600_000)
+}
+
 // ── Watchlist actions ──
 export const watchlistApi = {
   async get() {
@@ -471,4 +479,25 @@ export async function searchSymbols(query, limit = 12) {
   if (!r.ok) return []
   const data = await r.json()
   return data.results || []
+}
+
+// ── Weather — commodity-region conditions/forecast/anomaly, tied to futures ──
+export function useWeatherRegions() {
+  return useFetch('/weather/regions', 1800_000) // 30min, matches backend TTL_WEATHER
+}
+
+// ── Order book — full L2 crypto depth (Coinbase), top-of-book-only equities ──
+export function useOrderBookSnapshot(symbol) {
+  return useFetch(symbol ? `/orderbook/${symbol}` : null, 10_000)
+}
+export function useOrderBookProducts() {
+  return useFetch('/orderbook/products', null)
+}
+
+// ── FX depth — cross-rate matrix + per-pair historical drill-down ──
+export function useFxMatrix() {
+  return useFetch('/international/fx/matrix', 1800_000)
+}
+export function useFxHistory(code, days = 180) {
+  return useFetch(code ? `/international/fx/${code}/history?days=${days}` : null, null)
 }

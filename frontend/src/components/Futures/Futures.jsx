@@ -4,6 +4,15 @@ import {
   LineChart, Line, Legend,
 } from 'recharts'
 import { useFuturesAll, useFuturesBars, useFuturesCOT } from '../../hooks/useMarketData'
+import RawSeriesChart from '../Charts/RawSeriesChart'
+
+const HISTORY_RANGES = [
+  { label: '90D',  days: 90 },
+  { label: '180D', days: 180 },
+  { label: '1Y',   days: 365 },
+  { label: '3Y',   days: 365 * 3 },
+  { label: '5Y',   days: 365 * 5 },
+]
 
 const chgColor = (p) => p == null ? 'var(--text-dim)' : p > 0 ? 'var(--green)' : p < 0 ? 'var(--red)' : 'var(--text)'
 const fmtPct = (p) => p == null ? '—' : `${p > 0 ? '+' : ''}${p.toFixed(2)}%`
@@ -43,12 +52,12 @@ function RankedBar({ quotes, onPick, selected }) {
 }
 
 function ContractDetail({ symbol, name }) {
-  const { data: barsData, loading: barsLoading } = useFuturesBars(symbol, 90)
+  const [range, setRange] = useState(HISTORY_RANGES[2]) // 1Y default — enough depth to matter
+  const { data: barsData, loading: barsLoading } = useFuturesBars(symbol, range.days)
   const { data: cot, loading: cotLoading } = useFuturesCOT(symbol, 26)
 
-  const chartData = useMemo(() => (barsData?.bars || []).map(b => ({
-    t: new Date(b.t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-    c: b.c,
+  const chartBars = useMemo(() => (barsData?.bars || []).map(b => ({
+    t: Math.floor(b.t / 1000), o: b.o, h: b.h, l: b.l, c: b.c, v: b.v,
   })), [barsData])
 
   const cotData = useMemo(() => (cot?.history || []).map(h => ({
@@ -59,31 +68,29 @@ function ContractDetail({ symbol, name }) {
   })), [cot])
 
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold-bright)', marginBottom: 4 }}>
-        {symbol} — {name} — 90D PRICE
-      </div>
-      <div style={{ height: 130 }}>
-        {barsLoading ? <div className="dim" style={{ fontSize: 11 }}>Loading…</div> : (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="t" tick={{ fill: 'var(--text-dim)', fontSize: 7 }}
-                     axisLine={{ stroke: 'var(--border-bright)' }} interval={Math.ceil(chartData.length / 6)} />
-              <YAxis domain={['auto', 'auto']} tick={{ fill: 'var(--text-dim)', fontSize: 8 }}
-                     axisLine={{ stroke: 'var(--border-bright)' }} width={48} />
-              <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
-                       borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }} />
-              <Line type="monotone" dataKey="c" stroke="var(--steel-bright)" strokeWidth={1.5} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, flexShrink: 0 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold-bright)' }}>{symbol} — {name}</span>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {HISTORY_RANGES.map(r => (
+            <button key={r.label} className={`btn ${range.label === r.label ? 'active' : ''}`}
+              style={{ fontSize: 9, padding: '2px 7px' }} onClick={() => setRange(r)}>
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold-bright)', margin: '10px 0 4px' }}>
+      {/* Real interactive canvas chart — zoom/pan/crosshair, SMA/EMA — same
+          engine the main Overview price chart uses, not a decorative sparkline. */}
+      <div style={{ flex: 2, minHeight: 220 }}>
+        <RawSeriesChart bars={chartBars} loading={barsLoading} />
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold-bright)', margin: '10px 0 4px', flexShrink: 0 }}>
         CFTC POSITIONING (NET, BY TRADER TYPE)
       </div>
-      <div style={{ height: 140 }}>
+      <div style={{ flex: 1, minHeight: 120 }}>
         {cotLoading ? <div className="dim" style={{ fontSize: 11 }}>Loading…</div>
          : !cot?.available ? <div className="dim" style={{ fontSize: 11 }}>{cot?.reason || 'COT data unavailable for this contract.'}</div>
          : (
@@ -104,7 +111,7 @@ function ContractDetail({ symbol, name }) {
         )}
       </div>
       {cot?.available && (
-        <div className="dim" style={{ fontSize: 9, marginTop: 4 }}>{cot.note}</div>
+        <div className="dim" style={{ fontSize: 9, marginTop: 4, flexShrink: 0 }}>{cot.note}</div>
       )}
     </div>
   )
@@ -146,40 +153,44 @@ export default function Futures() {
 
       <div className="panel" style={{ minHeight: 0 }}>
         <div className="panel-header"><span className="title">Contract Detail</span></div>
-        <div className="panel-body" style={{ padding: '8px 12px', overflowY: 'auto' }}>
-          {selected ? (
-            <ContractDetail symbol={selected.symbol} name={selected.name} />
-          ) : (
-            <div className="dim" style={{ fontSize: 11, padding: 12 }}>
-              Click a contract on the left to see its price history and CFTC positioning trend.
-            </div>
-          )}
-
-          {byGroup.map(([group, rows]) => (
-            <div key={group} style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gold-bright)', margin: '4px 0' }}>
-                {group.toUpperCase()}
+        <div className="panel-body" style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ flex: selected ? '1.6' : '0 0 auto', minHeight: selected ? 260 : 0 }}>
+            {selected ? (
+              <ContractDetail symbol={selected.symbol} name={selected.name} />
+            ) : (
+              <div className="dim" style={{ fontSize: 11, padding: 12 }}>
+                Click a contract to see its full interactive price chart and CFTC positioning trend.
               </div>
-              {rows.map(q => (
-                <div key={q.symbol}
-                  onClick={() => pick(q.symbol)}
-                  style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '3px 6px', margin: '0 -6px', borderRadius: 3, cursor: 'pointer',
-                    borderBottom: '1px solid var(--border)',
-                    background: selected?.symbol === q.symbol ? 'var(--bg-raised)' : 'transparent',
-                  }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11,
-                                 color: selected?.symbol === q.symbol ? 'var(--gold-bright)' : 'var(--text)' }}>
-                    {q.symbol} <span className="dim" style={{ fontSize: 9, marginLeft: 4 }}>{q.name}</span>
-                  </span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: chgColor(q.change_pct) }}>
-                    {q.price} &nbsp; {fmtPct(q.change_pct)}
-                  </span>
+            )}
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+            {byGroup.map(([group, rows]) => (
+              <div key={group} style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gold-bright)', margin: '4px 0' }}>
+                  {group.toUpperCase()}
                 </div>
-              ))}
-            </div>
-          ))}
+                {rows.map(q => (
+                  <div key={q.symbol}
+                    onClick={() => pick(q.symbol)}
+                    style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '3px 6px', margin: '0 -6px', borderRadius: 3, cursor: 'pointer',
+                      borderBottom: '1px solid var(--border)',
+                      background: selected?.symbol === q.symbol ? 'var(--bg-raised)' : 'transparent',
+                    }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11,
+                                   color: selected?.symbol === q.symbol ? 'var(--gold-bright)' : 'var(--text)' }}>
+                      {q.symbol} <span className="dim" style={{ fontSize: 9, marginLeft: 4 }}>{q.name}</span>
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: chgColor(q.change_pct) }}>
+                      {q.price} &nbsp; {fmtPct(q.change_pct)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

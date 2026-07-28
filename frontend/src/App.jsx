@@ -51,6 +51,9 @@ import PortWatch       from './components/SupplyMap/PortWatch'
 import SideMenu         from './components/common/SideMenu'
 import CommandBar        from './components/common/CommandBar'
 import WelcomePage        from './components/Welcome/WelcomePage'
+import NewsTicker         from './components/common/NewsTicker'
+import Weather            from './components/Weather/Weather'
+import OrderBook          from './components/OrderBook/OrderBook'
 
 // ── Top bar clock ────────────────────────────────────────────────
 function UserMenu() {
@@ -341,6 +344,22 @@ function MultiChartLayout() {
   )
 }
 
+function OrderBookLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <OrderBook />
+    </div>
+  )
+}
+
+function WeatherLayout() {
+  return (
+    <div style={{ height: '100%' }}>
+      <Weather />
+    </div>
+  )
+}
+
 function RegimeLayout() {
   return (
     <div style={{ height: '100%' }}>
@@ -404,7 +423,7 @@ function WhalesLayout() {
 
 function YieldLayout() {
   return (
-    <div style={{ height: '100%', maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ height: '100%' }}>
       <YieldCurvePanel />
     </div>
   )
@@ -511,6 +530,8 @@ function AppInner() {
           </div>
         </div>
 
+        <NewsTicker />
+
         {/* ── Main Content ─────────────────────────────────────────── */}
         <div style={{ flex: 1, padding: 4, overflow: 'hidden', minHeight: 0 }}>
           {activeTab == null && <WelcomePage recentPages={recentPages} onNavigate={navigate} />}
@@ -522,6 +543,8 @@ function AppInner() {
           {activeTab === 'world'    && <WorldLayout />}
           {activeTab === 'futures'  && <FuturesLayout />}
           {activeTab === 'multichart' && <MultiChartLayout />}
+          {activeTab === 'orderbook' && <OrderBookLayout />}
+          {activeTab === 'weather'  && <WeatherLayout />}
           {activeTab === 'regime'   && <RegimeLayout />}
           {activeTab === 'events'   && <EventsLayout />}
           {activeTab === 'altdata'  && <AltDataLayout />}

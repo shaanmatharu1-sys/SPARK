@@ -1,8 +1,10 @@
 """
 routers/vol.py — Volatility surface analytics endpoints
 """
+import asyncio
 from fastapi import APIRouter, Query
-from services.polygon_client import fetch_options_snapshot, fetch_snapshot
+from services.polygon_client import fetch_options_snapshot, fetch_snapshot, fetch_dividend_yield
+from services.fred_client import fetch_yield_curve
 from analytics.vol.engine import build_surface, iv_rank
 
 router = APIRouter(prefix="/vol", tags=["vol"])
@@ -58,8 +60,14 @@ async def get_vol_surface(symbol: str):
     if not contracts:
         return {"error": "no usable contracts with quotes", "symbol": symbol, "spot": spot}
 
-    result = build_surface(spot, contracts)
+    # Live Treasury curve (per-expiry rate, not one flat guess) + trailing
+    # dividend yield (Merton adjustment) — both feed the IV solver.
+    curve, div_yield = await asyncio.gather(
+        fetch_yield_curve(), fetch_dividend_yield(symbol, spot)
+    )
+    result = build_surface(spot, contracts, curve=curve, dividend_yield=div_yield)
     result["symbol"] = symbol
+    result["dividend_yield"] = div_yield
     return result
 
 

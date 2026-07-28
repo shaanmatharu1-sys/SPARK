@@ -116,7 +116,17 @@ async def fetch_futures_bars(symbol: str, days: int = 90):
         for ts, row in hist.iterrows():
             if row.get("Close") != row.get("Close"):  # NaN
                 continue
-            bars.append({"t": int(ts.timestamp() * 1000), "c": round(float(row["Close"]), 4)})
+            # Full OHLCV (yfinance actually carries all of it, not just Close)
+            # so the frontend gets real candlesticks + volume, not just a
+            # line-only series.
+            bars.append({
+                "t": int(ts.timestamp() * 1000),
+                "o": round(float(row["Open"]), 4) if row.get("Open") == row.get("Open") else None,
+                "h": round(float(row["High"]), 4) if row.get("High") == row.get("High") else None,
+                "l": round(float(row["Low"]), 4) if row.get("Low") == row.get("Low") else None,
+                "c": round(float(row["Close"]), 4),
+                "v": float(row["Volume"]) if row.get("Volume") == row.get("Volume") else None,
+            })
         return {"available": True, "symbol": symbol, "bars": bars}
 
     result = await asyncio.to_thread(_blocking)
