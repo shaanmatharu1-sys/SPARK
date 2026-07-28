@@ -41,15 +41,17 @@ This module maintains the resulting order book in memory (per product,
     routers/orderbook.py when neither the in-memory book nor the Redis
     cache has anything yet (e.g. right after a fresh deploy, before this
     WS has received its first snapshot).
-  - `fetch_equity_top_of_book(symbol)` — best-effort equity NBBO via the
-    *existing* Polygon REST snapshot (fetch_snapshot in polygon_client.py)
-    — Polygon's `/v2/snapshot/.../tickers` response includes a `lastQuote`
-    field (P=bid, p=ask) when the account's plan carries quote/NBBO
-    entitlement. This project's Polygon plan has NOT been verified to
-    include that entitlement — if `lastQuote` is missing or zero, this
-    returns nulls with an explicit `"depth_limited"` / unavailable note
-    rather than fabricating a bid/ask. Equities NEVER get synthetic order
-    book levels here — only a real top-of-book quote, or nothing.
+  - `fetch_equity_top_of_book(symbol)` — best-effort equity NBBO. Tries
+    Alpaca's free Market Data API first (services/alpaca_client.py, IEX
+    feed, real-time bid/ask), then falls back to Polygon's REST snapshot
+    `lastQuote` field (P=bid, p=ask) — that field is only populated when
+    the Polygon plan carries quote/NBBO entitlement, which this project's
+    plan does NOT have (confirmed: `/v3/quotes` -> 403 NOT_AUTHORIZED), so
+    Alpaca is what actually serves this in practice. If neither source has
+    a usable quote, this returns nulls with an explicit `"depth_limited"` /
+    unavailable note rather than fabricating a bid/ask. Equities NEVER get
+    synthetic order book levels here — only a real top-of-book quote, or
+    nothing.
 """
 import asyncio
 import json
@@ -62,6 +64,7 @@ import websockets
 from cache.redis_client import cache_get, cache_set, publish
 from config import WS_RECV_TIMEOUT, TTL_ORDERBOOK
 from services.polygon_client import _WSFeedBase, fetch_snapshot
+from services.alpaca_client import fetch_top_of_book as fetch_alpaca_quote
 
 logger = logging.getLogger(__name__)
 
@@ -203,26 +206,37 @@ async def fetch_rest_snapshot(product_id: str, depth: int = 25) -> dict | None:
 
 async def fetch_equity_top_of_book(symbol: str) -> dict:
     """
-    Best-effort equity best-bid/ask — NOT full depth. Reuses the existing
-    Polygon REST snapshot (fetch_snapshot, already wired for the /quotes
-    endpoints) rather than standing up new Polygon integration.
+    Best-effort equity best-bid/ask — NOT full depth.
 
-    Honesty note: Polygon's stock snapshot response includes a `lastQuote`
-    field (P=bid price, p=ask price, S=bid size, s=ask size) ONLY when the
-    account's plan carries real-time quote/NBBO entitlement. This project's
-    plan has not been confirmed to include it. If `lastQuote` is absent or
-    its prices are zero/missing, this returns nulls with `depth_limited`
-    and a clear unavailable note — it never invents a bid/ask spread.
+    Primary source: Alpaca's free Market Data API (IEX feed, real-time
+    bid/ask — see services/alpaca_client.py). Falls back to Polygon's
+    stock snapshot `lastQuote` field (P=bid price, p=ask price, S=bid
+    size, s=ask size) if Alpaca is unavailable — that field is only
+    populated when the Polygon plan carries NBBO/quote entitlement, which
+    this project's plan does not (confirmed: `/v3/quotes` returns 403
+    NOT_AUTHORIZED), so in practice Alpaca is what actually serves this.
+
+    Honesty note: if neither source has a usable quote, this returns
+    nulls with `depth_limited` and a clear unavailable note — it never
+    invents a bid/ask spread.
     """
     symbol = symbol.upper()
-    snapshot = await fetch_snapshot([symbol])
-    t = (snapshot or {}).get(symbol, {}) or {}
-    last_quote = t.get("lastQuote") or {}
+    source = "alpaca"
+    quote = await fetch_alpaca_quote(symbol)
 
-    bid = last_quote.get("P")
-    ask = last_quote.get("p")
-    bid_size = last_quote.get("S")
-    ask_size = last_quote.get("s")
+    if quote:
+        bid, ask = quote["bid"], quote["ask"]
+        bid_size, ask_size = quote["bid_size"], quote["ask_size"]
+    else:
+        source = "polygon"
+        snapshot = await fetch_snapshot([symbol])
+        t = (snapshot or {}).get(symbol, {}) or {}
+        last_quote = t.get("lastQuote") or {}
+        bid = last_quote.get("P")
+        ask = last_quote.get("p")
+        bid_size = last_quote.get("S")
+        ask_size = last_quote.get("s")
+
     available = bool(bid) and bool(ask) and bid > 0 and ask > 0
 
     return {
@@ -231,6 +245,7 @@ async def fetch_equity_top_of_book(symbol: str) -> dict:
         "crypto":        False,
         "depth_limited": True,
         "available":     available,
+        "source":        source if available else None,
         "note": (
             "Equities show best-bid/ask only (NBBO top-of-book), not full market depth — "
             "true Level 2 equity depth requires a paid data entitlement this terminal does "

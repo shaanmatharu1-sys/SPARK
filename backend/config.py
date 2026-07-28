@@ -24,6 +24,12 @@ WEBULL_APP_KEY    = os.getenv("WEBULL_APP_KEY", "")
 WEBULL_APP_SECRET = os.getenv("WEBULL_APP_SECRET", "")
 WEBULL_REGION     = os.getenv("WEBULL_REGION", "us")
 
+# ── Alpaca Market Data (free real-time equity NBBO quotes, IEX feed) ────
+# Polygon's plan here has no quote entitlement (403 NOT_AUTHORIZED), so
+# equity top-of-book comes from Alpaca instead — see services/alpaca_client.py.
+ALPACA_API_KEY_ID  = os.getenv("ALPACA_API_KEY_ID", "")
+ALPACA_SECRET_KEY  = os.getenv("ALPACA_SECRET_KEY", "")
+
 # ── Redis ───────────────────────────────────────────────────────
 REDIS_URL        = os.getenv("REDIS_URL", "redis://localhost:6379")
 
