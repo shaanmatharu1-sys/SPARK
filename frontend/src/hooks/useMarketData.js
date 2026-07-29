@@ -51,8 +51,13 @@ export function useBars(symbol, multiplier = 1, timespan = 'minute', limit = 390
   // changes; PriceChart additionally layers live websocket ticks on top for 1D view.
   // fromDate overrides the backend's default lookback window — needed for YTD/All-Time
   // ranges, where the auto-computed lookback wouldn't reach far enough back.
+  // Guards against a falsy symbol (e.g. PriceChart.jsx's compareSymbol, which
+  // defaults to null until the user picks one) — without this, the template
+  // literal below builds the string "/quotes/null/bars", a real endpoint hit
+  // that fired on every chart mount and every 30s poll thereafter (visible in
+  // production logs as a steady stream of GET /quotes/null/bars requests).
   const fromQs = fromDate ? `&from_date=${fromDate}` : ''
-  return useFetch(`/quotes/${symbol}/bars?multiplier=${multiplier}&timespan=${timespan}&limit=${limit}${fromQs}`, 30_000)
+  return useFetch(symbol ? `/quotes/${symbol}/bars?multiplier=${multiplier}&timespan=${timespan}&limit=${limit}${fromQs}` : null, 30_000)
 }
 
 export function useMacroDashboard() {
