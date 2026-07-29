@@ -19,6 +19,11 @@ POLYGON_API_KEY  = os.getenv("POLYGON_API_KEY", "")
 FRED_API_KEY     = os.getenv("FRED_API_KEY", "")
 NEWS_API_KEY     = os.getenv("NEWS_API_KEY", "")
 
+# ── Webull OpenAPI (crypto market data — stopgap until a dedicated vendor) ──
+WEBULL_APP_KEY    = os.getenv("WEBULL_APP_KEY", "")
+WEBULL_APP_SECRET = os.getenv("WEBULL_APP_SECRET", "")
+WEBULL_REGION     = os.getenv("WEBULL_REGION", "us")
+
 # ── Redis ───────────────────────────────────────────────────────
 REDIS_URL        = os.getenv("REDIS_URL", "redis://localhost:6379")
 
@@ -91,6 +96,8 @@ TTL_COT      = 259200        # 3 days — CFTC COT report only updates weekly (F
 TTL_WEATHER  = 1800           # 30min — forecasts don't need to be near-real-time
 TTL_ORDERBOOK = 5             # REST fallback only — the live book is pushed over WS
 TTL_FX       = 1800           # 30min — Frankfurter/ECB rates only update once/day anyway
+TTL_CRYPTO_WEBULL   = 20     # crypto snapshot — Webull free tier is 1 req/sec per App Key
+TTL_CRYPTO_INSTRUMENTS = 21600  # 6hr — the list of tradable crypto symbols barely changes
 
 # ── WebSocket reliability ────────────────────────────────────────
 # After this many consecutive connect/auth/subscribe failures, stop the fast
