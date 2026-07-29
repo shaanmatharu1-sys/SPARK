@@ -2,9 +2,10 @@
 services/international_client.py
 
 Global markets data:
-  - Native index levels via yfinance (Nikkei, FTSE, DAX, Hang Seng, ...)
-    yfinance scrapes Yahoo's unofficial API — free, global coverage, but can be
-    rate-limited. Fails gracefully if unavailable.
+  - Native index levels: EODHD real-time quotes (live, ~15-20min delayed)
+    when EODHD_API_KEY is set, since Polygon/Finnhub here are US-only.
+    Falls back to yfinance (Yahoo's unofficial API — free, but EOD-only and
+    can be rate-limited) per-index for whatever EODHD doesn't cover.
   - Country/region ETFs, ADRs via Polygon (US-listed, already-wired).
   - FX rates via Frankfurter (ECB reference rates, free, no key — see the
     note above FX_CURRENCIES for why this replaced Polygon FX).
@@ -18,29 +19,31 @@ logger = logging.getLogger(__name__)
 import aiohttp
 
 from cache.redis_client import cache_get, cache_set
-from config import TTL_FX
-from services.polygon_client import fetch_snapshot
+from services.polygon_client import fetch_snapshot, fetch_fx_snapshot
+from services.eodhd_client import fetch_realtime_quotes, fetch_intraday
 
-# ── Native indices (yfinance symbols) ──
+# ── Native indices — yfinance symbol (fallback) + EODHD code (primary) ──
 WORLD_INDICES = {
-    "^GSPC":  {"name": "S&P 500",        "region": "Americas",  "country": "US"},
-    "^IXIC":  {"name": "Nasdaq",         "region": "Americas",  "country": "US"},
-    "^DJI":   {"name": "Dow Jones",      "region": "Americas",  "country": "US"},
-    "^GSPTSE":{"name": "TSX",            "region": "Americas",  "country": "Canada"},
-    "^BVSP":  {"name": "Bovespa",        "region": "Americas",  "country": "Brazil"},
-    "^FTSE":  {"name": "FTSE 100",       "region": "Europe",    "country": "UK"},
-    "^GDAXI": {"name": "DAX",            "region": "Europe",    "country": "Germany"},
-    "^FCHI":  {"name": "CAC 40",         "region": "Europe",    "country": "France"},
-    "^STOXX50E":{"name": "Euro Stoxx 50","region": "Europe",    "country": "Eurozone"},
-    "^IBEX":  {"name": "IBEX 35",        "region": "Europe",    "country": "Spain"},
-    "^N225":  {"name": "Nikkei 225",     "region": "Asia",      "country": "Japan"},
-    "^HSI":   {"name": "Hang Seng",      "region": "Asia",      "country": "Hong Kong"},
-    "000001.SS":{"name":"Shanghai Comp", "region": "Asia",      "country": "China"},
-    "^KS11":  {"name": "KOSPI",          "region": "Asia",      "country": "Korea"},
-    "^TWII":  {"name": "Taiwan Weighted","region": "Asia",      "country": "Taiwan"},
-    "^BSESN": {"name": "Sensex",         "region": "Asia",      "country": "India"},
-    "^AXJO":  {"name": "ASX 200",        "region": "Asia",      "country": "Australia"},
+    "^GSPC":  {"name": "S&P 500",        "region": "Americas",  "country": "US",        "eodhd": "GSPC.INDX"},
+    "^IXIC":  {"name": "Nasdaq",         "region": "Americas",  "country": "US",        "eodhd": "IXIC.INDX"},
+    "^DJI":   {"name": "Dow Jones",      "region": "Americas",  "country": "US",        "eodhd": "DJI.INDX"},
+    "^GSPTSE":{"name": "TSX",            "region": "Americas",  "country": "Canada",    "eodhd": "GSPTSE.INDX"},
+    "^BVSP":  {"name": "Bovespa",        "region": "Americas",  "country": "Brazil",    "eodhd": "BVSP.INDX"},
+    "^FTSE":  {"name": "FTSE 100",       "region": "Europe",    "country": "UK",        "eodhd": "FTSE.INDX"},
+    "^GDAXI": {"name": "DAX",            "region": "Europe",    "country": "Germany",   "eodhd": "GDAXI.INDX"},
+    "^FCHI":  {"name": "CAC 40",         "region": "Europe",    "country": "France",    "eodhd": "FCHI.INDX"},
+    "^STOXX50E":{"name": "Euro Stoxx 50","region": "Europe",    "country": "Eurozone",  "eodhd": "STOXX50E.INDX"},
+    "^IBEX":  {"name": "IBEX 35",        "region": "Europe",    "country": "Spain",     "eodhd": "IBEX.INDX"},
+    "^N225":  {"name": "Nikkei 225",     "region": "Asia",      "country": "Japan",     "eodhd": "N225.INDX"},
+    "^HSI":   {"name": "Hang Seng",      "region": "Asia",      "country": "Hong Kong", "eodhd": "HSI.INDX"},
+    "000001.SS":{"name":"Shanghai Comp", "region": "Asia",      "country": "China",     "eodhd": "SSEC.INDX"},
+    "^KS11":  {"name": "KOSPI",          "region": "Asia",      "country": "Korea",     "eodhd": "KS11.INDX"},
+    "^TWII":  {"name": "Taiwan Weighted","region": "Asia",      "country": "Taiwan",    "eodhd": "TWII.INDX"},
+    "^BSESN": {"name": "Sensex",         "region": "Asia",      "country": "India",     "eodhd": "SENSEX.INDX"},
+    "^AXJO":  {"name": "ASX 200",        "region": "Asia",      "country": "Australia", "eodhd": "AXJO.INDX"},
 }
+
+EODHD_TO_YF = {meta["eodhd"]: yf_sym for yf_sym, meta in WORLD_INDICES.items()}
 
 # ── Country/region ETFs (Polygon, US-listed) ──
 COUNTRY_ETFS = {
@@ -174,47 +177,92 @@ def _pct(cur, prev):
     return round((cur - prev) / prev * 100, 2)
 
 
+def _yfinance_indices(symbols: list[str]) -> list[dict]:
+    """Blocking yfinance lookup for whichever index symbols need it. Runs in a thread."""
+    try:
+        import yfinance as yf
+    except ImportError:
+        return []
+    if not symbols:
+        return []
+    out = []
+    try:
+        data = yf.download(symbols, period="5d", interval="1d",
+                           group_by="ticker", progress=False, threads=True)
+    except Exception as e:
+        logger.warning(f"[International] yfinance error: {str(e)[:120]}")
+        return []
+    for sym in symbols:
+        try:
+            df = data[sym] if len(symbols) > 1 else data
+            closes = df["Close"].dropna()
+            if len(closes) < 2:
+                continue
+            cur, prev = float(closes.iloc[-1]), float(closes.iloc[-2])
+            meta = WORLD_INDICES[sym]
+            out.append({
+                "symbol": sym, "name": meta["name"], "region": meta["region"],
+                "country": meta["country"], "level": round(cur, 2),
+                "change_pct": _pct(cur, prev), "source": "yfinance",
+            })
+        except Exception:
+            continue
+    return out
+
+
 async def fetch_world_indices():
-    """Native index levels via yfinance. Runs blocking yfinance in a thread."""
+    """
+    Native index levels. EODHD real-time quotes are the primary source (live,
+    global exchange coverage); any index EODHD doesn't return a quote for
+    (key not configured, or that particular index code failed) falls back to
+    yfinance's last two daily closes.
+    """
     cache_key = "intl:indices"
     cached = await cache_get(cache_key)
     if cached:
         return cached
 
-    def _blocking():
-        try:
-            import yfinance as yf
-        except ImportError:
-            return {"available": False, "reason": "yfinance not installed"}
-        out = []
-        symbols = list(WORLD_INDICES.keys())
-        try:
-            data = yf.download(symbols, period="5d", interval="1d",
-                               group_by="ticker", progress=False, threads=True)
-        except Exception as e:
-            return {"available": False, "reason": f"yfinance error: {str(e)[:120]}"}
-        for sym in symbols:
-            try:
-                df = data[sym] if len(symbols) > 1 else data
-                closes = df["Close"].dropna()
-                if len(closes) < 2:
-                    continue
-                cur, prev = float(closes.iloc[-1]), float(closes.iloc[-2])
-                meta = WORLD_INDICES[sym]
-                out.append({
-                    "symbol": sym, "name": meta["name"], "region": meta["region"],
-                    "country": meta["country"], "level": round(cur, 2),
-                    "change_pct": _pct(cur, prev),
-                })
-            except Exception:
-                continue
-        return {"available": True, "indices": out,
-                "as_of": datetime.datetime.utcnow().isoformat()}
+    eodhd_result = await fetch_realtime_quotes([meta["eodhd"] for meta in WORLD_INDICES.values()])
+    eodhd_quotes = eodhd_result.get("quotes", {}) if eodhd_result.get("available") else {}
 
-    result = await asyncio.to_thread(_blocking)
-    if result.get("available"):
-        await cache_set(cache_key, result, ttl=300)  # 5 min
+    out = []
+    missing_yf_symbols = []
+    for yf_sym, meta in WORLD_INDICES.items():
+        q = eodhd_quotes.get(meta["eodhd"])
+        if q and q.get("price") is not None:
+            out.append({
+                "symbol": yf_sym, "name": meta["name"], "region": meta["region"],
+                "country": meta["country"], "level": round(q["price"], 2),
+                "change_pct": q.get("change_pct"), "source": "eodhd",
+            })
+        else:
+            missing_yf_symbols.append(yf_sym)
+
+    if missing_yf_symbols:
+        out.extend(await asyncio.to_thread(_yfinance_indices, missing_yf_symbols))
+
+    if not out:
+        return {"available": False, "reason": "no index data from EODHD or yfinance"}
+
+    result = {
+        "available": True, "indices": out,
+        "as_of": datetime.datetime.utcnow().isoformat(),
+    }
+    # Live EODHD data moves fast; a pure yfinance fallback is EOD so cache longer.
+    await cache_set(cache_key, result, ttl=30 if eodhd_quotes else 300)
     return result
+
+
+async def fetch_index_bars(symbol: str, interval: str = "5m"):
+    """
+    Intraday chart bars for a World Indices symbol (the yfinance-style key,
+    e.g. "^GSPC") — resolves to its EODHD code and pulls intraday history.
+    Requires EODHD_API_KEY; the World Indices row otherwise has no chart.
+    """
+    meta = WORLD_INDICES.get(symbol)
+    if not meta:
+        return {"available": False, "reason": f"unknown index symbol {symbol}"}
+    return await fetch_intraday(meta["eodhd"], interval=interval)
 
 
 async def _etf_perf(mapping, label):

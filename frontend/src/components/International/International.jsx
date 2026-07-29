@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useMemo } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts'
-import { useInternational, useBars, useFxMatrix, useFxHistory } from '../../hooks/useMarketData'
+import { useInternational, useBars, useIndexBars } from '../../hooks/useMarketData'
 import { WORLD_LAND } from '../SupplyMap/worldGeo'
 import CountryDirectory from './CountryDirectory'
 import IMAPHeatmap from './IMAPHeatmap'
@@ -261,10 +261,52 @@ function FxDepth({ fx, fxAvail, reason }) {
   )
 }
 
+// Drill-down: intraday chart for whichever World Index is selected — EODHD-backed
+// (these aren't US-listed, so Polygon/useBars can't chart them).
+function IndexDetail({ symbol, name }) {
+  const { data, loading } = useIndexBars(symbol)
+  const bars = data?.bars || []
+  const chartData = useMemo(() => bars.map(b => ({
+    t: b.t ? new Date(b.t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '',
+    c: b.c,
+  })), [bars])
+
+  return (
+    <div style={{ marginTop: 6, marginBottom: 4 }}>
+      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--gold-bright)', marginBottom: 4 }}>
+        {name} — Intraday
+      </div>
+      <div style={{ height: 90 }}>
+        {loading ? <div className="dim" style={{ fontSize: 11 }}>Loading…</div> : data?.available === false ? (
+          <div className="dim" style={{ fontSize: 10 }}>
+            {data?.reason === 'EODHD_API_KEY not configured'
+              ? 'Set EODHD_API_KEY to chart world indices intraday.'
+              : `Chart unavailable — ${data?.reason || 'no data'}.`}
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="t" tick={{ fill: 'var(--text-dim)', fontSize: 7 }}
+                     axisLine={{ stroke: 'var(--border-bright)' }} interval={Math.ceil(chartData.length / 6)} />
+              <YAxis domain={['auto', 'auto']} tick={{ fill: 'var(--text-dim)', fontSize: 8 }}
+                     axisLine={{ stroke: 'var(--border-bright)' }} width={44} />
+              <Tooltip contentStyle={{ background: 'var(--bg-panel)', border: '1px solid var(--border-bright)',
+                       borderRadius: 4, fontSize: 10, fontFamily: 'var(--font-mono)' }} />
+              <Line type="monotone" dataKey="c" stroke="var(--steel-bright)" strokeWidth={1.5} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function International() {
   const { data, loading } = useInternational()
   const [selected, setSelected] = useState(null) // { symbol, name }
-  const [mode, setMode] = useState('overview') // overview | directory | heatmap | fx
+  const [selectedIndex, setSelectedIndex] = useState(null) // { symbol, name }
+  const [mode, setMode] = useState('overview') // overview | directory | heatmap
 
   const indices = data?.indices?.indices || []
   const indicesAvail = data?.indices?.available !== false
@@ -326,14 +368,21 @@ export default function International() {
           <div style={{ flex: 1, minHeight: 180 }}><WorldPerfMap etfs={etfs} /></div>
           <div style={{ marginTop: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--gold-bright)', marginBottom: 4 }}>
-              WORLD INDICES {!indicesAvail && <span className="dim" style={{ fontWeight: 400 }}>(yfinance unavailable)</span>}
+              WORLD INDICES <span className="dim" style={{ fontWeight: 400 }}>
+                {!indicesAvail ? '(unavailable)' : 'click to chart'}
+              </span>
             </div>
             {indices.length === 0 && indicesAvail && <div className="dim" style={{ fontSize: 11 }}>Loading…</div>}
             {indices.map(ix => (
               <Row key={ix.symbol} left={ix.name} sub={ix.country}
                    right={`${ix.level?.toLocaleString()}  ${fmtPct(ix.change_pct)}`}
-                   rightColor={chgColor(ix.change_pct)} />
+                   rightColor={chgColor(ix.change_pct)}
+                   active={selectedIndex?.symbol === ix.symbol}
+                   onClick={() => setSelectedIndex(
+                     selectedIndex?.symbol === ix.symbol ? null : { symbol: ix.symbol, name: ix.name }
+                   )} />
             ))}
+            {selectedIndex && <IndexDetail symbol={selectedIndex.symbol} name={selectedIndex.name} />}
           </div>
         </div>
       </div>

@@ -2,8 +2,7 @@
 from fastapi import APIRouter
 from services.international_client import (
     fetch_world_indices, fetch_country_etfs, fetch_adrs, fetch_fx,
-    fetch_fx_matrix, fetch_fx_history,
-    fetch_international_all, fetch_country_directory,
+    fetch_international_all, fetch_country_directory, fetch_index_bars,
 )
 
 router = APIRouter(prefix="/international", tags=["international"])
@@ -17,8 +16,14 @@ async def international_all():
 
 @router.get("/indices")
 async def world_indices():
-    """Native global index levels (yfinance)."""
+    """Native global index levels (EODHD real-time, yfinance fallback)."""
     return await fetch_world_indices()
+
+
+@router.get("/indices/{symbol}/bars")
+async def index_bars(symbol: str, interval: str = "5m"):
+    """GET /international/indices/^GSPC/bars — intraday chart bars (EODHD)."""
+    return await fetch_index_bars(symbol, interval=interval)
 
 
 @router.get("/etfs")

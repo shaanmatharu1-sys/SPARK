@@ -18,6 +18,7 @@ else:
 POLYGON_API_KEY  = os.getenv("POLYGON_API_KEY", "")
 FRED_API_KEY     = os.getenv("FRED_API_KEY", "")
 NEWS_API_KEY     = os.getenv("NEWS_API_KEY", "")
+EODHD_API_KEY    = os.getenv("EODHD_API_KEY", "")
 
 # ── Webull OpenAPI (crypto market data — stopgap until a dedicated vendor) ──
 WEBULL_APP_KEY    = os.getenv("WEBULL_APP_KEY", "")
