@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 from cache.redis_client import cache_get, cache_set
 from config import TTL_FUTURES
 
+# yfinance intraday windows are capped by Yahoo itself regardless of what's
+# asked for: 1m bars only go back 7 days, anything up to 90m only goes back 60.
+_INTRADAY_MAX_DAYS = {1: 7, 5: 60, 15: 60, 30: 60, 60: 60, 90: 60}
+
 FUTURES = {
     "ES=F":  {"name": "S&P 500 E-mini",     "group": "Equity Index"},
     "NQ=F":  {"name": "Nasdaq 100 E-mini",   "group": "Equity Index"},
@@ -137,3 +141,85 @@ async def fetch_futures_bars(symbol: str, days: int = 90):
 
 async def fetch_futures_all():
     return await fetch_futures_quotes()
+
+
+def resolve_futures_symbol(raw: str) -> str | None:
+    """
+    Accepts either the exact yfinance "=F" ticker or the bare root (e.g. "ES",
+    "CL", "GC") someone would naturally type into the main symbol search —
+    that search box has no idea futures use a different convention, so
+    without this a typed "ES" just silently 404s against the equity feed.
+    Returns None if it's not a covered contract either way.
+    """
+    s = (raw or "").upper().strip()
+    if s in FUTURES:
+        return s
+    alt = f"{s}=F"
+    if alt in FUTURES:
+        return alt
+    return None
+
+
+async def fetch_futures_bars_chart(
+    symbol: str, multiplier: int = 1, timespan: str = "minute",
+    from_date: str = None, to_date: str = None, limit: int = 390,
+):
+    """
+    Same OHLCV shape polygon_client.fetch_agg_bars returns (flat list of
+    {t,o,h,l,c,v}, t in epoch ms) but sourced from yfinance — this is what
+    lets the main chart's generic /quotes/{symbol}/bars call plot a futures
+    contract via the exact same PriceChart code path an equity uses, instead
+    of needing a separate chart just for futures.
+    """
+    symbol = symbol.upper()
+    if symbol not in FUTURES:
+        return []
+
+    interval = {"minute": f"{multiplier}m", "day": "1d", "week": "1wk", "month": "1mo"}.get(timespan, "1d")
+    today = datetime.date.today()
+    if from_date:
+        start = from_date
+    elif timespan == "minute":
+        cap = _INTRADAY_MAX_DAYS.get(multiplier, 60)
+        start = (today - datetime.timedelta(days=cap)).isoformat()
+    elif timespan == "week":
+        start = (today - datetime.timedelta(days=limit * 7 + 7)).isoformat()
+    elif timespan == "month":
+        start = (today - datetime.timedelta(days=limit * 31 + 31)).isoformat()
+    else:
+        start = (today - datetime.timedelta(days=limit + 5)).isoformat()
+    end = to_date or (today + datetime.timedelta(days=1)).isoformat()
+
+    cache_key = f"futures:chartbars:{symbol}:{interval}:{start}:{end}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    def _blocking():
+        try:
+            import yfinance as yf
+        except ImportError:
+            return []
+        try:
+            hist = yf.Ticker(symbol).history(start=start, end=end, interval=interval)
+        except Exception as e:
+            logger.warning(f"[futures_client] yfinance chart fetch failed for {symbol}: {e}")
+            return []
+        bars = []
+        for ts, row in hist.iterrows():
+            if row.get("Close") != row.get("Close"):  # NaN
+                continue
+            bars.append({
+                "t": int(ts.timestamp() * 1000),
+                "o": round(float(row["Open"]), 4) if row.get("Open") == row.get("Open") else None,
+                "h": round(float(row["High"]), 4) if row.get("High") == row.get("High") else None,
+                "l": round(float(row["Low"]), 4) if row.get("Low") == row.get("Low") else None,
+                "c": round(float(row["Close"]), 4),
+                "v": float(row["Volume"]) if row.get("Volume") == row.get("Volume") else None,
+            })
+        return bars[-limit:] if limit else bars
+
+    bars = await asyncio.to_thread(_blocking)
+    if bars:
+        await cache_set(cache_key, bars, ttl=TTL_FUTURES)
+    return bars

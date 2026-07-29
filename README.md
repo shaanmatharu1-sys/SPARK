@@ -45,6 +45,13 @@ pip install -r requirements.txt
 # Build the C++ Greeks extension
 python setup.py build_ext --inplace
 
+# Create/upgrade the accounts DB (users, watchlists, portfolio, timezone/theme
+# prefs, ...). Defaults to a local sqlite+aiosqlite file (./dev.db) if
+# DATABASE_URL isn't set; point it at Postgres for anything beyond local dev.
+# Skipping this step doesn't stop the app from booting, but every
+# auth/watchlist/portfolio/preference endpoint 500s until it's been run.
+alembic upgrade head
+
 # Run
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```

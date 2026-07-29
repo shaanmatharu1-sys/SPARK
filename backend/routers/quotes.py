@@ -6,6 +6,7 @@ from websocket.manager import manager
 from services.polygon_client import (
     fetch_snapshot, fetch_agg_bars, fetch_ticker_details, fetch_dividends, fetch_splits,
 )
+from services.futures_client import resolve_futures_symbol, fetch_futures_bars_chart
 from cache.redis_client import hget_quote, subscribe
 import asyncio
 
@@ -39,7 +40,18 @@ async def get_bars(
     to_date:    str = Query(default=None),
     limit:      int = Query(default=390),
 ):
-    """GET /quotes/AAPL/bars?multiplier=1&timespan=minute — OHLCV for charting."""
+    """
+    GET /quotes/AAPL/bars?multiplier=1&timespan=minute — OHLCV for charting.
+    Also the main chart's only path for futures: Polygon has no futures
+    entitlement on this plan, so a symbol matching the "=F" catalog (or its
+    bare root, e.g. "ES" for "ES=F") gets transparently routed to yfinance
+    instead of 404ing — see services/futures_client.py.
+    """
+    futures_symbol = resolve_futures_symbol(symbol)
+    if futures_symbol:
+        return await fetch_futures_bars_chart(
+            futures_symbol, multiplier, timespan, from_date, to_date, limit
+        )
     return await fetch_agg_bars(
         symbol.upper(), multiplier, timespan, from_date, to_date, limit
     )

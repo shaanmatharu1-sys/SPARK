@@ -5,11 +5,13 @@
 
 # Python
 venv/
+.venv/
 __pycache__/
 *.pyc
 *.so
 build/
 *.egg-info/
+*.db
 
 # Node
 node_modules/
