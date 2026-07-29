@@ -25,7 +25,13 @@ from routers import quotes, options, macro, news, sectors, sentiment, unusual_ac
 # Options: stays on Polygon — Finnhub's options chain/Greeks coverage isn't
 # proven to match it, and the IV surface/Greeks work already built against Polygon.
 from services.polygon_client import PolygonOptionsWS
-from services.finnhub_ws_client import FinnhubStocksWS
+# Live equity trades: EODHD, not Finnhub — verified directly that the
+# configured FINNHUB_API_KEY is dead (both Finnhub's REST and WS return
+# "Invalid API key"/401), while EODHD's WS auths successfully with the
+# EODHD_API_KEY already configured. EODHD also uniquely gives real top-of-
+# book bid/ask for equities, which Polygon's plan here has zero entitlement
+# for at all (verified directly) — see services/eodhd_ws_client.py.
+from services.eodhd_ws_client import EODHDStocksWS, EODHDQuotesWS
 # Crypto: Coinbase public WS — no key, no market-hours gap, keeps the terminal
 # genuinely live 24/7 even when equities/options are closed. (Binance's public
 # WS was tried first but returns HTTP 451 — geo-blocked from US hosts.)
@@ -53,7 +59,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── WebSocket feed instances ──────────────────────────────────────────────────
-stocks_ws  = FinnhubStocksWS(symbols=DEFAULT_WATCHLIST + SECTOR_ETFS)
+stocks_ws  = EODHDStocksWS(symbols=DEFAULT_WATCHLIST + SECTOR_ETFS)
+equity_quotes_ws = EODHDQuotesWS(symbols=DEFAULT_WATCHLIST + SECTOR_ETFS)
 options_ws = PolygonOptionsWS(symbols=DEFAULT_WATCHLIST)
 crypto_ws  = CoinbaseCryptoWS()
 orderbook_ws = CoinbaseOrderBookWS()
@@ -180,11 +187,12 @@ async def lifespan(app: FastAPI):
 
     # Start real-time WS feeds — stocks via Finnhub (free), options via Polygon,
     # crypto via Coinbase (free, 24/7 — never gated by market hours)
-    asyncio.create_task(stocks_ws.start(),  name="finnhub_stocks_ws")
+    asyncio.create_task(stocks_ws.start(),  name="eodhd_stocks_ws")
+    asyncio.create_task(equity_quotes_ws.start(), name="eodhd_equity_quotes_ws")
     asyncio.create_task(options_ws.start(), name="polygon_options_ws")
     asyncio.create_task(crypto_ws.start(),  name="coinbase_crypto_ws")
     asyncio.create_task(orderbook_ws.start(), name="coinbase_orderbook_ws")
-    logger.info("[WS Feeds] Finnhub stocks + Polygon options + Coinbase crypto + Coinbase order book starting...")
+    logger.info("[WS Feeds] EODHD stocks (trades+quotes) + Polygon options + Coinbase crypto + Coinbase order book starting...")
 
     # Start vessel-tracking feed (AISstream) if configured
     from services import vessel_client
@@ -205,6 +213,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("[Shutdown] Stopping feeds and scheduler...")
     await stocks_ws.stop()
+    await equity_quotes_ws.stop()
     await options_ws.stop()
     await crypto_ws.stop()
     await orderbook_ws.stop()
@@ -271,6 +280,7 @@ async def health():
         "redis":  redis_ok,
         "feeds": {
             "stocks_ws":  stocks_ws.health(),
+            "equity_quotes_ws": equity_quotes_ws.health(),
             "options_ws": options_ws.health(),
             "crypto_ws":  crypto_ws.health(),
             "orderbook_ws": orderbook_ws.health(),
