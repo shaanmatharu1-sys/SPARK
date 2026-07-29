@@ -20,7 +20,7 @@ const MIN_MAIN_FRACTION = 0.4  // main pane never shrinks below this, however ma
 const AXIS_RIGHT_WIDTH = 60    // gutter reserved for price/value labels
 const AXIS_BOTTOM_HEIGHT = 22  // gutter reserved for date/time labels
 
-export function createChartEngine(canvas, colors) {
+export function createChartEngine(canvas, colors, timeZone = 'America/New_York') {
   let bars = []
   let mode = 'candle'        // 'candle' | 'bar' | 'line'
   let showVolume = true
@@ -134,12 +134,12 @@ export function createChartEngine(canvas, colors) {
   function formatTimeLabel(t) {
     const d = new Date(t * 1000)
     if (barIntervalSeconds < 86400) {
-      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false })
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: false, timeZone })
     }
     if (barIntervalSeconds < 86400 * 25) {
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone })
     }
-    return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+    return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone })
   }
 
   function computeTimeTicks(lo, hi) {
@@ -390,8 +390,8 @@ export function createChartEngine(canvas, colors) {
 
     // OHLC readout, top-left of the main pane.
     const d = new Date(b.t * 1000)
-    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
-      (b.t % 86400 !== 0 ? ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : '')
+    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone }) +
+      (b.t % 86400 !== 0 ? ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone }) : '')
     ctx.font = '10px IBM Plex Mono, monospace'
     ctx.fillStyle = colors.dimText
     ctx.fillText(
@@ -463,6 +463,7 @@ export function createChartEngine(canvas, colors) {
       notifyRedraw()
     },
     setMode(m) { mode = m; draw() },
+    setTimeZone(tz) { timeZone = tz || 'America/New_York'; draw() },
     setShowVolume(b) { showVolume = b; draw() },
     setOverlays(arr) { overlays = arr; draw() },
     setCompareSeries(cmp) { compareSeries = cmp; draw() },

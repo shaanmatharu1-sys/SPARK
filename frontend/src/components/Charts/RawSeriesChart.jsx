@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createChartEngine } from '../../lib/canvasChart'
 import { sma, ema } from '../../lib/indicators'
+import { useAuth, DEFAULT_TIMEZONE } from '../../hooks/useAuth'
 
 // A full interactive canvas chart (zoom, pan, crosshair, real axes — the
 // same engine PriceChart uses) for series that don't come from the
@@ -42,6 +43,9 @@ export default function RawSeriesChart({ bars, loading, title, height, showVolum
   const canvasRef    = useRef(null)
   const engineRef    = useRef(null)
 
+  const { user } = useAuth()
+  const timeZone = user?.timezone || DEFAULT_TIMEZONE
+
   const hasOHLC = bars && bars.length && bars.every(b => b.o != null && b.h != null && b.l != null)
   const [mode, setMode] = useState(hasOHLC ? 'candle' : 'line')
   const [showVolume, setShowVolume] = useState(showVolumeDefault)
@@ -51,7 +55,7 @@ export default function RawSeriesChart({ bars, loading, title, height, showVolum
 
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return
-    const engine = createChartEngine(canvasRef.current, COLORS)
+    const engine = createChartEngine(canvasRef.current, COLORS, timeZone)
     engineRef.current = engine
     const ro = new ResizeObserver(() => engine.resize())
     ro.observe(containerRef.current)
@@ -60,6 +64,7 @@ export default function RawSeriesChart({ bars, loading, title, height, showVolum
 
   useEffect(() => { engineRef.current?.setMode(mode) }, [mode])
   useEffect(() => { engineRef.current?.setShowVolume(showVolume) }, [showVolume])
+  useEffect(() => { engineRef.current?.setTimeZone(timeZone) }, [timeZone])
 
   const rebuildOverlays = useCallback(() => {
     const engine = engineRef.current

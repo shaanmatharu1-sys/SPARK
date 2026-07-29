@@ -4,13 +4,40 @@ import { useBars } from '../../hooks/useMarketData'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { sma, ema, rsi, macd, bollingerBands } from '../../lib/indicators'
 import { useDrawingTools } from './ChartDrawingLayer'
+import { useAuth, DEFAULT_TIMEZONE } from '../../hooks/useAuth'
+
+// YYYY-MM-DD for "today" in a given IANA zone — used to bound '1D'/'1W' to
+// real ET calendar days rather than a fixed bar count. Defaults to US
+// Eastern: that's the session every US-listed instrument's trading day is
+// actually defined in, regardless of the viewer's own timezone.
+function todayInTz(tz = 'America/New_York', date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(date)
+  const get = (t) => parts.find(p => p.type === t)?.value
+  return `${get('year')}-${get('month')}-${get('day')}`
+}
+function daysAgoInTz(n, tz = 'America/New_York') {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() - n)
+  return todayInTz(tz, d)
+}
 
 const TIMESPANS = [
   { label: '1m',  multiplier: 1,  timespan: 'minute', limit: 390 },
   { label: '5m',  multiplier: 5,  timespan: 'minute', limit: 390 },
   { label: '30m', multiplier: 30, timespan: 'minute', limit: 390 },
-  { label: '1D',  multiplier: 1,  timespan: 'minute', limit: 390 },
-  { label: '1W',  multiplier: 5,  timespan: 'minute', limit: 390 },
+  // '1D'/'1W' used to rely on a fixed bar-count limit calibrated to a
+  // regular 6.5hr US equity session (390 one-minute bars/day) — anything
+  // that actually trades around the clock (24-hour-listed equities,
+  // crypto, some futures) got silently clipped to whatever fraction of the
+  // day 390/1950 bars covered instead of the real full session. Bounding
+  // by an explicit ET calendar-day range instead, with a limit generous
+  // enough to cover a genuine 24hr day (1440 min/day), fixes that for
+  // real around-the-clock symbols while leaving normal 6.5hr-session
+  // symbols unaffected (they simply don't have more than ~390 bars in
+  // that date range regardless of the higher ceiling).
+  { label: '1D',  multiplier: 1,  timespan: 'minute', limit: 1440, getFromDate: () => todayInTz() },
+  { label: '1W',  multiplier: 5,  timespan: 'minute', limit: 2100, getFromDate: () => daysAgoInTz(7) },
   { label: '1M',  multiplier: 1,  timespan: 'day',    limit: 30 },
   { label: '3M',  multiplier: 1,  timespan: 'day',    limit: 65 },
   { label: 'YTD', multiplier: 1,  timespan: 'day',    limit: 366, getFromDate: () => `${new Date().getFullYear()}-01-01` },
@@ -74,6 +101,8 @@ export default function PriceChart({ symbol = 'SPY', initialTimeframe }) {
   const lastBarTime   = useRef(null)
   const closesRef     = useRef([])
   const timesRef      = useRef([])
+  const { user } = useAuth()
+  const timeZone = user?.timezone || DEFAULT_TIMEZONE
 
   const [ts, setTs] = useState(() => TIMESPANS.find(t => t.label === initialTimeframe) || DEFAULT_TIMESPAN)
   const [mode, setMode] = useState('candle')
@@ -156,7 +185,7 @@ export default function PriceChart({ symbol = 'SPY', initialTimeframe }) {
   // Init the chart engine once per mount.
   useEffect(() => {
     if (!canvasElRef.current || !containerRef.current) return
-    const engine = createChartEngine(canvasElRef.current, COLORS)
+    const engine = createChartEngine(canvasElRef.current, COLORS, timeZone)
     engineRef.current = engine
     const ro = new ResizeObserver(() => engine.resize())
     ro.observe(containerRef.current)
@@ -165,6 +194,7 @@ export default function PriceChart({ symbol = 'SPY', initialTimeframe }) {
 
   useEffect(() => { engineRef.current?.setMode(mode) }, [mode])
   useEffect(() => { engineRef.current?.setShowVolume(showVolume) }, [showVolume])
+  useEffect(() => { engineRef.current?.setTimeZone(timeZone) }, [timeZone])
 
   // Load bulk bar data into the engine.
   useEffect(() => {

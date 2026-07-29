@@ -19,6 +19,12 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     theme: Mapped[str] = mapped_column(String(32), default="midnight-brass")
+    # IANA tz name (e.g. "America/New_York") — drives the chart time axis and
+    # top-bar clock. Defaults to US Eastern since that's the reference
+    # session for every US-market timestamp this app shows, not the visitor's
+    # machine timezone (which is what it silently used before this column
+    # existed, unrelated to where the actual markets/instruments trade).
+    timezone: Mapped[str] = mapped_column(String(64), default="America/New_York")
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=datetime.datetime.utcnow
     )

@@ -19,6 +19,20 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,32}$")
 VALID_THEMES = {"midnight-brass", "amber-classic", "cool-blue", "monochrome-slate"}
 
+# Curated list, not the full IANA tz database — every zone a US research
+# platform's users actually need (US zones, the major trading-hub zones,
+# and UTC), kept short enough to be a real dropdown rather than a search box.
+VALID_TIMEZONES = {
+    "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+    "America/Anchorage", "Pacific/Honolulu",
+    "America/Sao_Paulo", "America/Toronto",
+    "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Zurich",
+    "Asia/Tokyo", "Asia/Hong_Kong", "Asia/Shanghai", "Asia/Singapore",
+    "Asia/Kolkata", "Asia/Dubai",
+    "Australia/Sydney",
+    "UTC",
+}
+
 
 class SignupBody(BaseModel):
     username: str
@@ -31,12 +45,13 @@ class LoginBody(BaseModel):
     password: str
 
 
-class ThemeUpdate(BaseModel):
-    theme: str
+class ProfileUpdate(BaseModel):
+    theme: str | None = None
+    timezone: str | None = None
 
 
 def _user_out(user: User) -> dict:
-    return {"id": user.id, "username": user.username, "theme": user.theme}
+    return {"id": user.id, "username": user.username, "theme": user.theme, "timezone": user.timezone}
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -82,12 +97,17 @@ async def me(current_user: User = Depends(get_current_user)):
 
 @router.patch("/me")
 async def update_me(
-    body: ThemeUpdate,
+    body: ProfileUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if body.theme not in VALID_THEMES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"theme must be one of {sorted(VALID_THEMES)}")
-    current_user.theme = body.theme
+    if body.theme is not None:
+        if body.theme not in VALID_THEMES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"theme must be one of {sorted(VALID_THEMES)}")
+        current_user.theme = body.theme
+    if body.timezone is not None:
+        if body.timezone not in VALID_TIMEZONES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"timezone must be one of {sorted(VALID_TIMEZONES)}")
+        current_user.timezone = body.timezone
     await db.commit()
     return _user_out(current_user)

@@ -87,12 +87,51 @@ export function AuthProvider({ children }) {
     }
   }, [token])
 
+  const setTimezone = useCallback(async (timezone) => {
+    setUser(u => u ? { ...u, timezone } : u)  // apply immediately, don't wait on the round-trip
+    try {
+      await authRequest('/auth/me', { method: 'PATCH', body: { timezone }, token })
+    } catch {
+      // best-effort persistence — the live change already applied locally
+    }
+  }, [token])
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, signup, logout, setTheme }}>
+    <AuthContext.Provider value={{ user, token, loading, login, signup, logout, setTheme, setTimezone }}>
       {children}
     </AuthContext.Provider>
   )
 }
+
+// Default reference timezone for chart axes / the top-bar clock — US Eastern,
+// since that's the session every US-market timestamp in this app is actually
+// anchored to, not whatever timezone the visitor's machine happens to be in.
+export const DEFAULT_TIMEZONE = 'America/New_York'
+
+// Mirrors backend/routers/auth.py's VALID_TIMEZONES — a curated dropdown,
+// not the full IANA database.
+export const TIMEZONES = [
+  { value: 'America/New_York',    label: 'Eastern (ET)' },
+  { value: 'America/Chicago',     label: 'Central (CT)' },
+  { value: 'America/Denver',      label: 'Mountain (MT)' },
+  { value: 'America/Los_Angeles', label: 'Pacific (PT)' },
+  { value: 'America/Anchorage',   label: 'Alaska (AKT)' },
+  { value: 'Pacific/Honolulu',    label: 'Hawaii (HT)' },
+  { value: 'America/Sao_Paulo',   label: 'São Paulo' },
+  { value: 'America/Toronto',     label: 'Toronto' },
+  { value: 'Europe/London',       label: 'London (GMT/BST)' },
+  { value: 'Europe/Paris',        label: 'Paris/Berlin (CET)' },
+  { value: 'Europe/Berlin',       label: 'Berlin (CET)' },
+  { value: 'Europe/Zurich',       label: 'Zurich (CET)' },
+  { value: 'Asia/Dubai',          label: 'Dubai (GST)' },
+  { value: 'Asia/Kolkata',        label: 'Mumbai (IST)' },
+  { value: 'Asia/Singapore',      label: 'Singapore (SGT)' },
+  { value: 'Asia/Hong_Kong',      label: 'Hong Kong (HKT)' },
+  { value: 'Asia/Shanghai',       label: 'Shanghai (CST)' },
+  { value: 'Asia/Tokyo',          label: 'Tokyo (JST)' },
+  { value: 'Australia/Sydney',    label: 'Sydney (AEST/AEDT)' },
+  { value: 'UTC',                 label: 'UTC' },
+]
 
 export function useAuth() {
   const ctx = useContext(AuthContext)

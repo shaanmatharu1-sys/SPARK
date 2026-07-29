@@ -40,7 +40,7 @@ import BacktestTab      from './components/Backtest/BacktestTab'
 import Arbitrage        from './components/Arbitrage/Arbitrage'
 import GraphBuilder      from './components/GraphBuilder/GraphBuilder'
 import { SymbolProvider, useSymbol } from './hooks/useSymbol'
-import { AuthProvider, useAuth } from './hooks/useAuth'
+import { AuthProvider, useAuth, DEFAULT_TIMEZONE, TIMEZONES } from './hooks/useAuth'
 import { useWatchlist, useWebSocketHealth } from './hooks/useMarketData'
 import { useRecentPages } from './hooks/useRecentPages'
 import LoginScreen from './components/Auth/LoginScreen'
@@ -57,7 +57,7 @@ import OrderBook          from './components/OrderBook/OrderBook'
 
 // ── Top bar clock ────────────────────────────────────────────────
 function UserMenu() {
-  const { user, logout, setTheme } = useAuth()
+  const { user, logout, setTheme, setTimezone } = useAuth()
   const [open, setOpen] = useState(false)
   if (!user) return null
 
@@ -82,6 +82,17 @@ function UserMenu() {
               </button>
             ))}
           </div>
+          <div className="label" style={{ marginBottom: 6 }}>Timezone</div>
+          <select
+            className="input"
+            value={user.timezone || DEFAULT_TIMEZONE}
+            onChange={(e) => setTimezone(e.target.value)}
+            style={{ width: '100%', fontSize: 10, padding: '4px 6px', marginBottom: 10 }}
+          >
+            {TIMEZONES.map(tz => (
+              <option key={tz.value} value={tz.value}>{tz.label}</option>
+            ))}
+          </select>
           <button className="btn" style={{ width: '100%', fontSize: 11 }}
             onClick={() => { setOpen(false); logout() }}>
             Log out
@@ -114,31 +125,45 @@ function LiveIndicator() {
   )
 }
 
+// US equities trade on a fixed 9:30am-4:00pm ET session regardless of where
+// the viewer (or their machine clock) physically is — this used to check
+// time.getHours()/getDay() (the browser's LOCAL timezone), which reported
+// the wrong open/closed state for every user not physically in US Eastern.
+// Always evaluate the session in ET, independent of whatever timezone the
+// clock below is DISPLAYING for the user.
+const _ET_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York', hour12: false,
+  weekday: 'short', hour: 'numeric', minute: 'numeric',
+})
+function isUsMarketOpen(date) {
+  const parts = Object.fromEntries(_ET_PARTS.formatToParts(date).map(p => [p.type, p.value]))
+  const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday)
+  const mins = (parts.hour % 24) * 60 + Number(parts.minute)
+  return day >= 1 && day <= 5 && mins >= 570 && mins < 960
+}
+
 function Clock() {
+  const { user } = useAuth()
+  const timeZone = user?.timezone || DEFAULT_TIMEZONE
   const [time, setTime] = useState(new Date())
   useEffect(() => {
     const id = setInterval(() => setTime(new Date()), 1000)
     return () => clearInterval(id)
   }, [])
 
-  const isMarketOpen = () => {
-    const h = time.getHours(), m = time.getMinutes()
-    const mins = h * 60 + m
-    const day  = time.getDay()
-    return day >= 1 && day <= 5 && mins >= 570 && mins < 960
-  }
+  const open = isUsMarketOpen(time)
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
       <LiveIndicator />
-      <span style={{ color: isMarketOpen() ? 'var(--green)' : 'var(--red)', fontSize: 9 }}>
-        ● {isMarketOpen() ? 'MARKET OPEN' : 'MARKET CLOSED'}
+      <span style={{ color: open ? 'var(--green)' : 'var(--red)', fontSize: 9 }}>
+        ● {open ? 'MARKET OPEN' : 'MARKET CLOSED'}
       </span>
-      <span style={{ color: 'var(--text-secondary)', fontSize: 10 }}>
-        {time.toLocaleTimeString('en-US', { hour12: false })}
+      <span style={{ color: 'var(--text-secondary)', fontSize: 10 }} title={`Displayed in ${timeZone}`}>
+        {time.toLocaleTimeString('en-US', { hour12: false, timeZone })}
       </span>
       <span className="dim" style={{ fontSize: 9 }}>
-        {time.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+        {time.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone })}
       </span>
     </div>
   )
