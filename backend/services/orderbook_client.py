@@ -41,15 +41,13 @@ This module maintains the resulting order book in memory (per product,
     routers/orderbook.py when neither the in-memory book nor the Redis
     cache has anything yet (e.g. right after a fresh deploy, before this
     WS has received its first snapshot).
-  - `fetch_equity_top_of_book(symbol)` — best-effort equity NBBO via the
-    *existing* Polygon REST snapshot (fetch_snapshot in polygon_client.py)
-    — Polygon's `/v2/snapshot/.../tickers` response includes a `lastQuote`
-    field (P=bid, p=ask) when the account's plan carries quote/NBBO
-    entitlement. This project's Polygon plan has NOT been verified to
-    include that entitlement — if `lastQuote` is missing or zero, this
-    returns nulls with an explicit `"depth_limited"` / unavailable note
-    rather than fabricating a bid/ask. Equities NEVER get synthetic order
-    book levels here — only a real top-of-book quote, or nothing.
+  - `fetch_equity_top_of_book(symbol)` — real equity NBBO via EODHD's
+    real-time quotes WebSocket (services/eodhd_ws_client.py) — Polygon's
+    plan here has zero quote entitlement (verified directly), so this
+    replaced a Polygon-based attempt that could never have worked. Still
+    top-of-book only, never full depth: no vendor at this price point
+    sells real equity Level 2. Equities NEVER get synthetic order book
+    levels here — only a real top-of-book quote, or nothing.
 """
 import asyncio
 import json
@@ -61,7 +59,7 @@ import websockets
 
 from cache.redis_client import cache_get, cache_set, publish
 from config import WS_RECV_TIMEOUT, TTL_ORDERBOOK
-from services.polygon_client import _WSFeedBase, fetch_snapshot
+from services.polygon_client import _WSFeedBase
 
 logger = logging.getLogger(__name__)
 
@@ -203,26 +201,38 @@ async def fetch_rest_snapshot(product_id: str, depth: int = 25) -> dict | None:
 
 async def fetch_equity_top_of_book(symbol: str) -> dict:
     """
-    Best-effort equity best-bid/ask — NOT full depth. Reuses the existing
-    Polygon REST snapshot (fetch_snapshot, already wired for the /quotes
-    endpoints) rather than standing up new Polygon integration.
+    Real equity best-bid/ask — NOT full depth — via EODHD's dedicated
+    real-time quotes WebSocket (services/eodhd_ws_client.py's
+    EODHDQuotesWS). This replaced a Polygon-based attempt that could never
+    have worked: verified directly against the live API, this project's
+    Polygon plan has zero quote/NBBO entitlement at any tier (stock
+    snapshot has no `lastQuote` field at all, `/v3/quotes/{ticker}` and the
+    WS `Q.*` channel both return NOT_AUTHORIZED/"not authorized").
 
-    Honesty note: Polygon's stock snapshot response includes a `lastQuote`
-    field (P=bid price, p=ask price, S=bid size, s=ask size) ONLY when the
-    account's plan carries real-time quote/NBBO entitlement. This project's
-    plan has not been confirmed to include it. If `lastQuote` is absent or
-    its prices are zero/missing, this returns nulls with `depth_limited`
-    and a clear unavailable note — it never invents a bid/ask spread.
+    If `symbol` isn't already in the live-tracked set (the default
+    watchlist/sector universe), this triggers an on-demand subscribe and
+    returns unavailable for this call — the live quote lands within a
+    couple seconds and the next poll picks it up. No fabricated bid/ask is
+    ever returned for a symbol with no real quote yet.
     """
-    symbol = symbol.upper()
-    snapshot = await fetch_snapshot([symbol])
-    t = (snapshot or {}).get(symbol, {}) or {}
-    last_quote = t.get("lastQuote") or {}
+    from services.eodhd_ws_client import get_equity_quote
 
-    bid = last_quote.get("P")
-    ask = last_quote.get("p")
-    bid_size = last_quote.get("S")
-    ask_size = last_quote.get("s")
+    symbol = symbol.upper()
+    q = get_equity_quote(symbol)
+
+    if q is None:
+        # Not tracked yet (or market closed since first subscribing) —
+        # kick off a live subscribe for next time rather than staying silent.
+        try:
+            import main as _main  # local import: avoids a circular import at module load time
+            asyncio.create_task(_main.equity_quotes_ws.ensure_subscribed(symbol))
+        except Exception:
+            pass
+
+    bid = q.get("bid") if q else None
+    ask = q.get("ask") if q else None
+    bid_size = q.get("bid_size") if q else None
+    ask_size = q.get("ask_size") if q else None
     available = bool(bid) and bool(ask) and bid > 0 and ask > 0
 
     return {
@@ -233,11 +243,13 @@ async def fetch_equity_top_of_book(symbol: str) -> dict:
         "available":     available,
         "note": (
             "Equities show best-bid/ask only (NBBO top-of-book), not full market depth — "
-            "true Level 2 equity depth requires a paid data entitlement this terminal does "
-            "not currently have. No synthetic order book levels are generated."
+            "real Level 2 equity depth is an enterprise-tier data product no vendor offers "
+            "at this price point (unlike crypto, where exchanges publish it for free). "
+            "No synthetic order book levels are generated."
             if available else
-            "Best bid/ask is unavailable for this symbol on the current data plan. "
-            "No fabricated quote or depth is shown — this is a real limitation, not a bug."
+            "No live quote yet for this symbol — it was just subscribed to the real-time "
+            "feed and should populate within a few seconds (or the market is closed). "
+            "No fabricated quote is shown in the meantime."
         ),
         "bids":          [],
         "asks":          [],
